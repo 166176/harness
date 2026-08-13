@@ -142,3 +142,20 @@ goreleaser release --clean
 5. 观察闭环：工具调用与测试输出回灌持续进行；危险动作会在控制台弹出审批并倒计时，批准/拒绝后流程继续
 6. 终态校验：测试全绿（退出码 0）或预算耗尽（退出码 1）
 7. 离线机制复核：`gavel demo` 三场景全 PASS（不依赖真实 LLM，回归机制本身）
+
+#### 快速验收：testdata/sample-repo（真实 LLM，人工步骤，不进 CI）
+
+仓库内置种子 bug 样例 `testdata/sample-repo/`（`calc.go` 的 `Add` 故意返回 2，`calc_test.go` 断言 `Add(1,2)==3`），可一键验证端到端修复闭环：
+
+```bash
+# 0. 确认种子 bug 存在（应 FAIL）
+cd testdata/sample-repo && go test ./...    # 预期：--- FAIL: TestAdd
+
+# 1. 录入 DeepSeek key（隐藏输入；容器则注入 .env / GAVEL_API_KEY）
+gavel key set
+
+# 2. 发起修复任务
+gavel run --repo testdata/sample-repo --test "go test ./..." --task "修复失败测试"
+```
+
+预期：会话从失败测试出发，经「LLM 决策 → 工具调用 → 测试回灌」闭环，最终修复 `Add` 使 `go test ./...` 全绿，会话状态走到 `completed`（退出码 0）；期间危险动作会在 `gavel serve` 控制台弹出审批。此步骤需要真实 DeepSeek API key，属人工验收，不纳入 CI。
