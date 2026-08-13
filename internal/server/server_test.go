@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -421,5 +422,98 @@ func TestStaticIndexServed(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "gavel") {
 		t.Fatalf("body=%s", rr.Body.String())
+	}
+}
+
+// C1：POST /api/sessions 校验三字段非空后异步启动会话，返回 202+{"id"} 且 runner 被调用。
+func TestCreateSessionReturns202AndInvokesRunner(t *testing.T) {
+	got := make(chan SessionRequest, 1)
+	h := New(Deps{
+		HITL:   govern.NewManager(),
+		Store:  memory.NewStore(t.TempDir()),
+		Secret: &memSecret{},
+		SessionRunner: func(_ context.Context, req SessionRequest) (string, error) {
+			got <- req
+			return "s42", nil
+		},
+	})
+	rr := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"repo":"/tmp/r","test":"go test ./...","task":"修复测试"}`)
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", body))
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["id"] != "s42" {
+		t.Fatalf("id=%q（202 应回传 runner 创建的会话 id）", resp["id"])
+	}
+	select {
+	case req := <-got:
+		if req.Repo != "/tmp/r" || req.Test != "go test ./..." || req.Task != "修复测试" {
+			t.Fatalf("req=%+v", req)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SessionRunner 未被调用")
+	}
+}
+
+// C1：任一字段缺失 → 400，且不得调用 runner。
+func TestCreateSessionMissingFields400(t *testing.T) {
+	called := false
+	h := New(Deps{
+		HITL:   govern.NewManager(),
+		Store:  memory.NewStore(t.TempDir()),
+		Secret: &memSecret{},
+		SessionRunner: func(context.Context, SessionRequest) (string, error) {
+			called = true
+			return "s", nil
+		},
+	})
+	rr := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"repo":"","test":"go test ./...","task":"x"}`)
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", body))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if called {
+		t.Fatal("字段缺失时不应调用 runner")
+	}
+}
+
+// C1：SessionRunner 未装配 → 500（fail-closed，附可操作提示）。
+func TestCreateSessionRunnerNotConfigured500(t *testing.T) {
+	h := New(Deps{HITL: govern.NewManager(), Store: memory.NewStore(t.TempDir()), Secret: &memSecret{}})
+	rr := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"repo":"r","test":"t","task":"x"}`)
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", body))
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "key set") {
+		t.Fatalf("500 应附 key 配置引导：%s", rr.Body.String())
+	}
+}
+
+// C1：runner 返回错误（如未配置 key）→ 500 且透出错误信息。
+func TestCreateSessionRunnerError500(t *testing.T) {
+	h := New(Deps{
+		HITL:   govern.NewManager(),
+		Store:  memory.NewStore(t.TempDir()),
+		Secret: &memSecret{},
+		SessionRunner: func(context.Context, SessionRequest) (string, error) {
+			return "", errors.New("未配置 API key，请先运行 `gavel key set`")
+		},
+	})
+	rr := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"repo":"r","test":"t","task":"x"}`)
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", body))
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "key set") {
+		t.Fatalf("错误应透出 key 引导：%s", rr.Body.String())
 	}
 }

@@ -5,6 +5,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -27,7 +29,6 @@ import (
 	"github.com/166176/harness/internal/server"
 	"github.com/166176/harness/internal/tools"
 	"github.com/166176/harness/internal/version"
-	"gopkg.in/yaml.v3"
 )
 
 // 退出码（SPEC §3.2）。
@@ -183,6 +184,7 @@ func (a *app) cmdServe(args []string) int {
 	fs.SetOutput(a.stderr)
 	port := fs.Int("port", 0, "监听端口（默认 8080，或 $PORT）")
 	host := fs.String("host", "", "监听地址（默认全接口）")
+	policyPath := fs.String("policy", "", "护栏策略 YAML（可选，覆盖默认策略）")
 	if err := fs.Parse(args); err != nil {
 		return ExitConfig
 	}
@@ -197,18 +199,7 @@ func (a *app) cmdServe(args []string) int {
 			p = 8080
 		}
 	}
-	h := server.New(server.Deps{
-		HITL:   govern.NewManager(),
-		Store:  memory.NewStore(filepath.Join(dataDir(), "sessions")),
-		Secret: a.secret,
-		DemoFunc: func(ctx context.Context) ([]map[string]any, error) {
-			var out []map[string]any
-			for _, r := range demo.Run(ctx) {
-				out = append(out, map[string]any{"name": r.Name, "pass": r.Pass, "trace": r.Trace})
-			}
-			return out, nil
-		},
-	})
+	h := server.New(a.serveDeps(*policyPath))
 	addr := net.JoinHostPort(*host, strconv.Itoa(p))
 	fmt.Fprintf(a.stdout, "gavel serve 监听 http://%s\n", addr)
 	if err := http.ListenAndServe(addr, h); err != nil {
@@ -266,17 +257,12 @@ func (a *app) cmdRun(args []string) int {
 	}
 	policy := govern.DefaultPolicy()
 	if *policyPath != "" {
-		b, rerr := os.ReadFile(*policyPath)
-		if rerr != nil {
-			fmt.Fprintf(a.stderr, "run: 策略文件读取失败：%v\n", rerr)
+		p, perr := loadCustomPolicy(*policyPath)
+		if perr != nil {
+			fmt.Fprintf(a.stderr, "run: %v\n", perr)
 			return ExitConfig
 		}
-		var p govern.Policy
-		if uerr := yaml.Unmarshal(b, &p); uerr != nil {
-			fmt.Fprintf(a.stderr, "run: 策略解析失败：%v\n", uerr)
-			return ExitConfig
-		}
-		policy = withTimeoutFallback(p)
+		policy = p
 	}
 	// newLLMClient 默认接入真实适配器（llm.NewOpenAIClient）；仅在测试替换为 nil 时停于此。
 	client := newLLMClient(cfg.BaseURL, modelName, key)
@@ -284,20 +270,12 @@ func (a *app) cmdRun(args []string) int {
 		fmt.Fprintln(a.stderr, "run: LLM 客户端创建失败（工厂被测试替换为 nil）")
 		return ExitConfig
 	}
-	runner := &core.Runner{
-		LLM:   client,
-		Tools: tools.RegistryOf(assembleTools(*repo, *testCmd)),
-		Guard: func(gc govern.GuardContext, act govern.Action) govern.Verdict {
-			gc.SecretKey = key // 泄露比对需要已存 key（core.Runner 只填 RepoRoot）
-			return govern.Check(policy, gc, act)
-		},
-		HITL:            govern.NewManager(),
-		Policy:          policy,
-		ApprovalTimeout: time.Duration(policy.ApprovalTimeoutSeconds) * time.Second,
-		MaxTurns:        maxT,
-		TimeBudget:      budget,
-		Store:           memory.NewStore(filepath.Join(dataDir(), "sessions")),
-	}
+	hitl := govern.NewManager()
+	store := memory.NewStore(filepath.Join(dataDirFn(), "sessions"))
+	cfg.MaxTurns = maxT
+	cfg.TimeoutSec = int(budget / time.Second)
+	runner := buildCoreRunner(client, key, policy, hitl, store, cfg, *repo, *testCmd,
+		a.approvalDecider(hitl, time.Duration(policy.ApprovalTimeoutSeconds)*time.Second))
 	sess := &core.Session{
 		ID:       newSessionID(),
 		Repo:     *repo,
@@ -308,6 +286,9 @@ func (a *app) cmdRun(args []string) int {
 	if err := runner.Run(context.Background(), sess); err != nil {
 		fmt.Fprintf(a.stderr, "run: 会话执行失败：%v\n", err)
 		return ExitBudget
+	}
+	if sess.State == core.StateCompleted {
+		saveProjectHint(store, *repo, *task, *testCmd) // §3.5 项目约定库：成功后沉淀跨会话记忆
 	}
 	printRunSummary(a.stdout, sess)
 	switch sess.State {
@@ -340,6 +321,21 @@ func assembleTools(repo, testCmd string) []tools.Tool {
 	return ts
 }
 
+// saveProjectHint 在会话成功后把任务与测试命令沉淀为项目约定（§3.5 记忆维度），
+// 下次同仓库会话经 core.Runner.Hint 按需装配进 system 提示。
+func saveProjectHint(store *memory.Store, repo, task, testCmd string) {
+	if store == nil {
+		return
+	}
+	abs, err := filepath.Abs(repo)
+	if err != nil {
+		abs = repo
+	}
+	sum := sha256.Sum256([]byte(abs))
+	key := "hint:" + hex.EncodeToString(sum[:])[:16]
+	_ = store.Put(key, map[string]string{"task": task, "test": testCmd})
+}
+
 // printRunSummary 输出会话 id + 终态 + 摘要（SPEC §3.2）。
 func printRunSummary(w io.Writer, sess *core.Session) {
 	fmt.Fprintf(w, "session: %s\n", sess.ID)
@@ -347,8 +343,8 @@ func printRunSummary(w io.Writer, sess *core.Session) {
 	fmt.Fprintf(w, "steps: %d\n", len(sess.Steps))
 }
 
-// dataDir 返回 harness 全局数据目录 ~/.gavel（SPEC §3.4）。
-func dataDir() string {
+// dataDirFn 可注入（测试替换为临时目录）；生产默认 ~/.gavel（SPEC §3.4）。
+var dataDirFn = func() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		home = "."

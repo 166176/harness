@@ -57,6 +57,44 @@ func (s *srv) handleSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sess)
 }
 
+// handleCreateSession 处理 POST /api/sessions（C1 审批链路修复入口）：
+// 校验三字段非空 → 异步启动会话 → 202 + {"id": runner 创建的会话 id}。
+// runner 返回错误（如未配置 API key）→ 500 + 可操作提示；未装配 → 500。
+func (s *srv) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	var req SessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body 不是合法 JSON"})
+		return
+	}
+	if req.Repo == "" || req.Test == "" || req.Task == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "repo/test/task 为必填"})
+		return
+	}
+	if s.deps.SessionRunner == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session runner 未装配：未配置 API key，请先运行 `gavel key set`"})
+		return
+	}
+	type result struct {
+		id  string
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		id, err := s.deps.SessionRunner(r.Context(), req)
+		ch <- result{id: id, err: err}
+	}()
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": res.err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"id": res.id})
+	case <-time.After(30 * time.Second):
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session runner 启动超时"})
+	}
+}
+
 // handlePendingApprovals 返回当前所有 pending 审批。
 func (s *srv) handlePendingApprovals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"approvals": s.pendingApprovals()})

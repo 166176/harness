@@ -139,13 +139,13 @@ goreleaser release --clean
 2. 启动控制台：`gavel serve`，浏览器打开 `http://localhost:8080` 查看审批队列
 3. 准备样例仓库：一个含失败测试的 Go 仓库
 4. 发起修复任务：`gavel run --repo <样例仓库> --test "go test ./..." --task "修复失败的测试"`（默认 base_url=`https://api.deepseek.com`、model=`deepseek-chat`，可用 `--config` 覆盖）
-5. 观察闭环：工具调用与测试输出回灌持续进行；危险动作会在控制台弹出审批并倒计时，批准/拒绝后流程继续
+5. 观察闭环：工具调用与测试输出回灌持续进行；危险动作经 CLI 交互 y/n（终端内）或 WebUI 控制台审批，批准/拒绝后流程继续
 6. 终态校验：测试全绿（退出码 0）或预算耗尽（退出码 1）
 7. 离线机制复核：`gavel demo` 三场景全 PASS（不依赖真实 LLM，回归机制本身）
 
 #### 快速验收：testdata/sample-repo（真实 LLM，人工步骤，不进 CI）
 
-仓库内置种子 bug 样例 `testdata/sample-repo/`（`calc.go` 的 `Add` 故意返回 2，`calc_test.go` 断言 `Add(1,2)==3`），可一键验证端到端修复闭环：
+仓库内置种子 bug 样例 `testdata/sample-repo/`（`calc.go` 的 `Add` 故意返回 2，`calc_test.go` 断言 `Add(1,2)==3`），可一键验证端到端修复闭环。先完成公共准备：
 
 ```bash
 # 0. 确认种子 bug 存在（应 FAIL）
@@ -153,9 +153,28 @@ cd testdata/sample-repo && go test ./...    # 预期：--- FAIL: TestAdd
 
 # 1. 录入 DeepSeek key（隐藏输入；容器则注入 .env / GAVEL_API_KEY）
 gavel key set
+```
 
-# 2. 发起修复任务
+审批通道二选一（§6.3 CLI 交互 或 WebUI 控制台）：
+
+**路径 A：CLI 交互式 y/n 审批**
+
+```bash
+# 2. 在交互式终端（TTY）发起修复任务；命中危险动作时按提示输入 y/n
 gavel run --repo testdata/sample-repo --test "go test ./..." --task "修复失败测试"
 ```
 
-预期：会话从失败测试出发，经「LLM 决策 → 工具调用 → 测试回灌」闭环，最终修复 `Add` 使 `go test ./...` 全绿，会话状态走到 `completed`（退出码 0）；期间危险动作会在 `gavel serve` 控制台弹出审批。此步骤需要真实 DeepSeek API key，属人工验收，不纳入 CI。
+**路径 B：WebUI 审批控制台**
+
+```bash
+# 2. 启动控制台，浏览器打开 http://localhost:8080 查看审批队列
+gavel serve
+
+# 3. 经 REST API 发起会话（返回 202 + 会话 id；也可在控制台会话页发起）
+curl -X POST http://localhost:8080/api/sessions -H "Content-Type: application/json" \
+  -d '{"repo":"testdata/sample-repo","test":"go test ./...","task":"修复失败测试"}'
+
+# 4. 在控制台批准/拒绝危险动作（SSE 实时推送审批），观察会话继续或终止
+```
+
+预期：会话从失败测试出发，经「LLM 决策 → 工具调用 → 测试回灌」闭环，最终修复 `Add` 使 `go test ./...` 全绿，会话状态走到 `completed`（退出码 0）；期间危险动作经所选通道审批（CLI y/n 或 WebUI 控制台）。此步骤需要真实 DeepSeek API key，属人工验收，不纳入 CI。

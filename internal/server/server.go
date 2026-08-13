@@ -16,6 +16,16 @@ import (
 //go:embed all:webui/dist
 var distFS embed.FS
 
+// SessionRequest 是启动修复会话的请求体（POST /api/sessions）。
+type SessionRequest struct {
+	Repo string `json:"repo"`
+	Test string `json:"test"`
+	Task string `json:"task"`
+}
+
+// SessionRunner 启动一次修复会话并返回会话 id。
+type SessionRunner func(ctx context.Context, req SessionRequest) (string, error)
+
 // Deps 是 server 的装配依赖。
 type Deps struct {
 	HITL   *govern.Manager
@@ -23,6 +33,9 @@ type Deps struct {
 	Secret secret.Provider
 	// DemoFunc 承接 T13 的 demo.Run 三场景（本任务用函数类型，避免跨包依赖）。
 	DemoFunc func(ctx context.Context) ([]map[string]any, error)
+	// SessionRunner 承接 C1：启动一次修复会话（cli serve 装配；
+	// 未装配或返回错误时端点 500，fail-closed）。
+	SessionRunner SessionRunner
 }
 
 type srv struct {
@@ -44,6 +57,7 @@ func New(d Deps) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/sessions", s.handleSessions)
+	mux.HandleFunc("POST /api/sessions", s.handleCreateSession)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleSession)
 	mux.HandleFunc("GET /api/approvals/pending", s.handlePendingApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.handleDecide)
