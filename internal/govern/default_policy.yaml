@@ -1,0 +1,12 @@
+approval_patterns:
+  - '(?i)\brm\s+(-[a-z]+\s+)*[-rf]+\b|rm\s+-rf|rm\s+-fr|del\s+/[sq]'
+  - '(?i)git\s+push\s+.*--force'
+  - '(?i)git\s+reset\s+--hard'
+  - '(?i)git\s+clean\s+-fdx'
+  - '(?i)curl\s+.*\|\s*(ba)?sh'
+  - '(?i)\bDROP\s+(DATABASE|TABLE)\b'
+  - '(?i)\bmkfs\b|format\s+[a-z]:'
+  - '(?i)\bcurl\b|\bwget\b'
+deny_patterns:
+  - '(?i)chmod\s+777\s+/(etc|usr|bin|sbin)'
+approval_timeout_seconds: 300
