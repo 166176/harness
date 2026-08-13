@@ -35,6 +35,9 @@ type Manager struct {
 
 	// BeforeTimeoutDecide 是测试钩子：在 Await 超时分支落地 Timeout 决策前被调用（nil 时无操作）。
 	BeforeTimeoutDecide func()
+
+	// BeforeCtxCancelDecide 是测试钩子：在 Await 的 ctx 取消分支落地 Timeout 决策前被调用（nil 时无操作）。
+	BeforeCtxCancelDecide func()
 }
 
 func NewManager() *Manager {
@@ -65,11 +68,18 @@ func (m *Manager) Await(ctx context.Context, id string, timeout time.Duration) A
 		if m.BeforeTimeoutDecide != nil {
 			m.BeforeTimeoutDecide()
 		}
-		_ = m.Decide(id, Timeout, "timeout") // fail-closed
+		if err := m.Decide(id, Timeout, "timeout"); err != nil {
+			return Timeout // fail-closed
+		}
 		return m.status(id)
 	case <-ctx.Done():
-		_ = m.Decide(id, Timeout, "cancel")
-		return Timeout
+		if m.BeforeCtxCancelDecide != nil {
+			m.BeforeCtxCancelDecide()
+		}
+		if err := m.Decide(id, Timeout, "cancel"); err != nil {
+			return Timeout // fail-closed
+		}
+		return m.status(id)
 	}
 }
 

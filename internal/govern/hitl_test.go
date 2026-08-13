@@ -66,3 +66,40 @@ func TestAwaitTimeoutRaceWithConcurrentDecideReturnsRealStatus(t *testing.T) {
 		t.Fatalf("真实终态应为 approved，got %s", got)
 	}
 }
+
+func TestAwaitUnknownIDReturnsTimeout(t *testing.T) {
+	m := NewManager()
+	st := m.Await(context.Background(), "no-such-id", 10*time.Millisecond)
+	if st != Timeout {
+		t.Fatalf("未知 id 应返回 timeout（fail-closed），got %s", st)
+	}
+}
+
+func TestAwaitCtxCancelRaceReturnsRealStatus(t *testing.T) {
+	m := NewManager()
+	a, err := m.Create("s1", Action{}, "r", "risk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 模拟窄窗口交错：ctx 已取消、取消分支落地 Timeout 决策前，
+	// 外部并发 Decide 先落地 Approved。hook 在取消分支内、落地 Timeout 前执行。
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var hookErr error
+	m.BeforeCtxCancelDecide = func() {
+		hookErr = m.Decide(a.ID, Approved, "concurrent")
+	}
+	done := make(chan ApprovalStatus, 1)
+	go func() { done <- m.Await(ctx, a.ID, time.Minute) }()
+	cancel()
+	st := <-done
+	if hookErr != nil {
+		t.Fatalf("hook 内 Decide 失败: %v", hookErr)
+	}
+	if st != Approved {
+		t.Fatalf("Await 返回值应与真实终态一致（approved），got %s", st)
+	}
+	if got := m.status(a.ID); got != Approved {
+		t.Fatalf("真实终态应为 approved，got %s", got)
+	}
+}
