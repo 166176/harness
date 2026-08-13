@@ -90,7 +90,7 @@ func (s *srv) handleDecide(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	s.hub.broadcast(decidedEvent(id, body.Decision))
+	s.hub.broadcast(s.decidedEvent(id))
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": string(st)})
 }
 
@@ -124,22 +124,12 @@ func (s *srv) handleDemo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rs)
 }
 
-// pendingApprovals 通过 store 会话键枚举 manager 中 pending 审批。
+// pendingApprovals 直接枚举 manager 中全部 pending 审批（跨会话）。
 func (s *srv) pendingApprovals() []*govern.Approval {
-	aps := []*govern.Approval{}
-	if s.deps.HITL == nil || s.deps.Store == nil {
-		return aps
+	if s.deps.HITL == nil {
+		return []*govern.Approval{}
 	}
-	keys, err := s.deps.Store.List("session:")
-	if err != nil {
-		return aps
-	}
-	for _, k := range keys {
-		if ap, ok := s.deps.HITL.Pending(strings.TrimPrefix(k, "session:")); ok {
-			aps = append(aps, ap)
-		}
-	}
-	return aps
+	return s.deps.HITL.PendingAll()
 }
 
 // handleEvents 建立 SSE 连接：初始 pending 快照 + 每秒轮询增量 + decided 广播。
@@ -180,7 +170,7 @@ func (s *srv) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			for id := range seen {
 				if !curSet[id] {
-					writeSSE(w, fl, decidedEvent(id, ""))
+					writeSSE(w, fl, s.decidedEvent(id))
 				}
 			}
 			seen = curSet
@@ -200,22 +190,26 @@ func writeSSE(w http.ResponseWriter, fl http.Flusher, payload []byte) {
 
 func approvalEvent(ap *govern.Approval) []byte {
 	b, _ := json.Marshal(map[string]any{
-		"type":    "pending",
-		"id":      ap.ID,
-		"session": ap.SessionID,
-		"action":  ap.Action,
-		"rule":    ap.Rule,
-		"risk":    ap.Risk,
-		"status":  string(ap.Status),
+		"type":      "pending",
+		"id":        ap.ID,
+		"sessionId": ap.SessionID,
+		"action":    ap.Action,
+		"rule":      ap.Rule,
+		"risk":      ap.Risk,
+		"status":    string(ap.Status),
 	})
 	return b
 }
 
-func decidedEvent(id, decision string) []byte {
-	m := map[string]any{"type": "decided", "id": id}
-	if decision != "" {
-		m["decision"] = decision
+// decidedEvent 生成 decided 事件：经 HITL.Get 读取终态，decision 小写输出。
+func (s *srv) decidedEvent(id string) []byte {
+	decision := ""
+	if s.deps.HITL != nil {
+		if ap, ok := s.deps.HITL.Get(id); ok {
+			decision = strings.ToLower(string(ap.Status))
+		}
 	}
+	m := map[string]any{"type": "decided", "id": id, "decision": decision}
 	b, _ := json.Marshal(m)
 	return b
 }

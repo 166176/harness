@@ -273,6 +273,98 @@ func TestEventsDecidedBroadcast(t *testing.T) {
 	t.Fatal("未收到 decided SSE 广播")
 }
 
+// F1：pending 列表由 HITL.PendingAll 驱动——store 无会话键时首轮审批也必须可见，且 JSON 键为 camelCase。
+func TestPendingApprovalsUsesPendingAll(t *testing.T) {
+	st := memory.NewStore(t.TempDir()) // 不写入任何 session 键
+	m := govern.NewManager()
+	ap1, err := m.Create("s1", govern.Action{Tool: "run_shell", Args: map[string]any{"command": "make"}}, "dangerous", "risk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Create("s2", govern.Action{Tool: "write_file", Args: map[string]any{"path": "x.go"}}, "r", "risk"); err != nil {
+		t.Fatal(err)
+	}
+	h := New(Deps{HITL: m, Store: st, Secret: &memSecret{}})
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/approvals/pending", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	var envelope struct {
+		Approvals []map[string]any `json:"approvals"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Approvals) != 2 {
+		t.Fatalf("PendingAll 驱动下首轮审批应可见（2 条），body=%s", rr.Body.String())
+	}
+	first := envelope.Approvals[0]
+	if first["id"] != ap1.ID {
+		t.Fatalf("id 键应 camelCase 且等于 %s，body=%s", ap1.ID, rr.Body.String())
+	}
+	if _, ok := first["sessionId"]; !ok {
+		t.Fatalf("缺 camelCase 键 sessionId，body=%s", rr.Body.String())
+	}
+	if _, bad := first["SessionID"]; bad {
+		t.Fatalf("出现 PascalCase 键 SessionID，body=%s", rr.Body.String())
+	}
+}
+
+// F1：decided 事件必须带 decision 字段（轮询 diff 路径，经 Get 读取终态，小写输出）。
+func TestDecidedEventCarriesDecisionFromPolling(t *testing.T) {
+	st := memory.NewStore(t.TempDir()) // 无 session 键：初始快照也由 PendingAll 驱动
+	m := govern.NewManager()
+	ap, err := m.Create("s5", govern.Action{Tool: "run_shell", Args: map[string]any{"command": "make"}}, "dangerous", "risk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(Deps{HITL: m, Store: st, Secret: &memSecret{}})
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	sc := bufio.NewScanner(resp.Body)
+	// 先消费初始 pending 快照事件
+	sawPending := false
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"type":"pending"`) && strings.Contains(line, ap.ID) {
+			sawPending = true
+			break
+		}
+	}
+	if !sawPending {
+		t.Fatal("未收到初始 pending 快照事件")
+	}
+	// 不经 POST 广播：直接落决策，只有轮询 diff 能发现审批消失
+	if err := m.Decide(ap.ID, govern.Approved, "test"); err != nil {
+		t.Fatal(err)
+	}
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"type":"decided"`) && strings.Contains(line, ap.ID) {
+			if !strings.Contains(line, `"decision":"approved"`) {
+				t.Fatalf("decided 事件缺 decision 字段: %s", line)
+			}
+			return
+		}
+	}
+	if sc.Err() != nil {
+		t.Fatal(sc.Err())
+	}
+	t.Fatal("未收到 decided SSE 事件")
+}
+
 func TestDemoEndpoint(t *testing.T) {
 	h := New(Deps{HITL: govern.NewManager(), Store: memory.NewStore(t.TempDir()), Secret: &memSecret{}})
 	rr := httptest.NewRecorder()
