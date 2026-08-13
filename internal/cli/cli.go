@@ -48,9 +48,11 @@ type app struct {
 	dotenv  secret.Provider // key status 定位存储位置
 }
 
-// newLLMClient 由 T16 接入真实 OpenAI 兼容客户端（llm.NewOpenAIClient）。
-// 当前为 nil：API key 存在但适配器未实现时，run 以退出码 3 停止并提示。
-var newLLMClient = func(baseURL, model, apiKey string) llm.Client { return nil }
+// newLLMClient 为可注入工厂：默认接入真实 OpenAI 兼容客户端（T16，llm.NewOpenAIClient）。
+// 测试可整体替换该变量，避免真实联网。
+var newLLMClient = func(baseURL, model, apiKey string) llm.Client {
+	return llm.NewOpenAIClient(baseURL, apiKey, model)
+}
 
 // Run 是生产入口：main.go 以 os.Args[1:]、os.Stdin、os.Stdout、os.Stderr 调用。
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -276,10 +278,10 @@ func (a *app) cmdRun(args []string) int {
 		}
 		policy = p
 	}
-	// 真实 LLM 适配器在 T16 接入（llm.NewOpenAIClient）。
+	// newLLMClient 默认接入真实适配器（llm.NewOpenAIClient）；仅在测试替换为 nil 时停于此。
 	client := newLLMClient(cfg.BaseURL, modelName, key)
 	if client == nil {
-		fmt.Fprintln(a.stderr, "run: LLM 适配器未实现（T16 接入）；会话参数已装配完毕，当前停止于客户端创建")
+		fmt.Fprintln(a.stderr, "run: LLM 客户端创建失败（工厂被测试替换为 nil）")
 		return ExitConfig
 	}
 	runner := &core.Runner{

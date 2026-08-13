@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/166176/harness/internal/llm"
 	"github.com/166176/harness/internal/secret"
 )
 
@@ -110,6 +114,39 @@ func TestKeyStatusNoKeyExit0(t *testing.T) {
 	}
 	if out == "" {
 		t.Fatal("未配置时也应输出提示")
+	}
+}
+
+// T16：newLLMClient 工厂接入真实 OpenAI 兼容客户端（T14 遗留）。
+// httptest 断言 Authorization=key 且 body.model=modelName，验证参数顺序正确。
+func TestNewLLMClientFactoryWiredToOpenAI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer sk-secret-value-1234" {
+			t.Errorf("Authorization 应为 Bearer key")
+			return
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Model != "deepseek-chat" {
+			t.Errorf("请求体 model 应为 deepseek-chat")
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "ok"}}},
+		})
+	}))
+	defer srv.Close()
+	c := newLLMClient(srv.URL, "deepseek-chat", "sk-secret-value-1234")
+	if c == nil {
+		t.Fatal("T16 应接入真实客户端")
+	}
+	comp, err := c.Complete(context.Background(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !comp.Done {
+		t.Fatalf("无 tool_calls 应 Done：%+v", comp)
 	}
 }
 
