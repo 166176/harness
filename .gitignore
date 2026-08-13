@@ -16,3 +16,7 @@ webui/dist/assets/
 # 系统
 .DS_Store
 Thumbs.db
+
+# Superpowers 工作区（worktree 隔离目录 + SDD 台账）
+.worktrees/
+.superpowers/
