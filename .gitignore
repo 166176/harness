@@ -13,6 +13,10 @@ webui/node_modules/
 webui/dist/assets/
 !webui/dist/index.html
 
+# server 内嵌前端（占位 index.html 保证 go:embed 可编译，T15 构建产物替换）
+!internal/server/webui/dist/
+!internal/server/webui/dist/**
+
 # 系统
 .DS_Store
 Thumbs.db
