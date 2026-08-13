@@ -43,7 +43,7 @@ func Parse(format, out string, exitCode int) []TestFailure {
 	case "gotest":
 		return parseGoTest(out, exitCode)
 	case "pytest":
-		return parsePytest(out)
+		return parsePytest(out, exitCode)
 	default:
 		return nil
 	}
@@ -85,8 +85,10 @@ func parseGoTest(out string, exitCode int) []TestFailure {
 
 // parsePytest 扫描 pytest 输出：`file.py:line:` 行构成失败记录，
 // 紧邻其前的 `E   ...` 行并入该记录的 Message；
-// 若输出只有 `E   ...` 行而无定位行，则合并为单条失败。
-func parsePytest(out string) []TestFailure {
+// 若输出只有 `E   ...` 行而无定位行，则合并为单条失败；
+// 退出码非 0 且没有解析到任何结构化失败时，产生单个 KindUnknown
+// 失败（Message 为输出尾部 500 字符）。
+func parsePytest(out string, exitCode int) []TestFailure {
 	var failures []TestFailure
 	var pending []string
 	for _, line := range strings.Split(out, "\n") {
@@ -111,6 +113,12 @@ func parsePytest(out string) []TestFailure {
 	if len(failures) == 0 && len(pending) > 0 {
 		msg := strings.Join(pending, "\n")
 		failures = append(failures, TestFailure{Message: msg, Kind: classify(msg)})
+	}
+	if exitCode != 0 && len(failures) == 0 {
+		failures = append(failures, TestFailure{
+			Message: tail(out, 500),
+			Kind:    KindUnknown,
+		})
 	}
 	return failures
 }

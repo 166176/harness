@@ -32,6 +32,26 @@ func TestParsePytest(t *testing.T) {
 	}
 }
 
+func TestParsePytestNonzeroExitFallsBackToUnknown(t *testing.T) {
+	fs := Parse("pytest", "Killed\n", 1)
+	if len(fs) != 1 {
+		t.Fatalf("非零退出且无结构化失败应回退单条 unknown，got %d", len(fs))
+	}
+	if fs[0].Kind != KindUnknown {
+		t.Fatalf("kind=%s, want %s", fs[0].Kind, KindUnknown)
+	}
+	if !contains(fs[0].Message, "Killed") {
+		t.Fatalf("message=%q, want 含 Killed", fs[0].Message)
+	}
+}
+
+func TestParsePytestGreenOutputNoFailure(t *testing.T) {
+	fs := Parse("pytest", "3 passed in 0.01s", 0)
+	if len(fs) != 0 {
+		t.Fatalf("pytest 全绿应无失败，got %+v", fs)
+	}
+}
+
 func TestGreenOutputNoFailure(t *testing.T) {
 	fs := Parse("gotest", "ok  \tgithub.com/x/y\t0.001s", 0)
 	if len(fs) != 0 {
