@@ -129,6 +129,10 @@ func (r *Runner) Run(ctx context.Context, sess *Session) error {
 					round = append(round, toolResult(call.ID, "拒绝：审批创建失败 "+cerr.Error()))
 					continue
 				}
+				// F1：审批进入 Await 前立即落盘，控制台才能枚举到首轮审批。
+				if err := r.persist(sess); err != nil {
+					return err
+				}
 				status := decider(ctx, ap)
 				if status != govern.Approved {
 					msg := "拒绝：审批未通过（" + string(status) + "）"

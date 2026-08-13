@@ -139,6 +139,49 @@ func TestNilHITLReturnsError(t *testing.T) {
 	}
 }
 
+// F1：HITL.Create 后、Await 解除前会话必须已落盘，否则控制台看不到首轮审批。
+func TestSessionPersistedBeforeApprovalAwait(t *testing.T) {
+	mock := &llm.ScriptedMock{Steps: []llm.Completion{
+		{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "run_shell", Arguments: `{"command":"go test ./..."}`}}}},
+	}}
+	store := memory.NewStore(t.TempDir())
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	r := &Runner{
+		LLM:   mock,
+		Tools: tools.RegistryOf(nil),
+		Guard: func(govern.GuardContext, govern.Action) govern.Verdict {
+			return govern.Verdict{Decision: govern.NeedsApproval, Rule: "test"}
+		},
+		HITL:     govern.NewManager(),
+		MaxTurns: 3,
+		Store:    store,
+		ApprovalDecider: func(_ context.Context, _ *govern.Approval) govern.ApprovalStatus {
+			close(entered)
+			<-release
+			return govern.Denied
+		},
+	}
+	sess := &Session{ID: "s1", Repo: t.TempDir(), Task: "t", TestCmd: "go test ./...", MaxTurns: 3}
+	runErr := make(chan error, 1)
+	go func() { runErr <- r.Run(context.Background(), sess) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("decider 未被调用（审批路径未触发）")
+	}
+	// decider 阻塞 = Await 尚未解除；此刻 Store 必须已含该会话记录。
+	var got map[string]any
+	ok, err := store.Get("session:"+sess.ID, &got)
+	if err != nil || !ok {
+		t.Fatalf("Await 解除前 Store 无会话记录: ok=%v err=%v", ok, err)
+	}
+	close(release)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Tools 未装配时，工具分发应返回配置错误而非 panic。
 func TestNilToolsReturnsError(t *testing.T) {
 	mock := &llm.ScriptedMock{Steps: []llm.Completion{
