@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -118,6 +119,9 @@ func (r *Runner) Run(ctx context.Context, sess *Session) error {
 				round = append(round, toolResult(call.ID, msg))
 				continue
 			case govern.NeedsApproval:
+				if r.HITL == nil {
+					return errors.New("core: HITL not configured")
+				}
 				ap, cerr := r.HITL.Create(sess.ID, action, v.Rule, v.Rule)
 				if cerr != nil {
 					step.Result = cerr.Error()
@@ -133,6 +137,9 @@ func (r *Runner) Run(ctx context.Context, sess *Session) error {
 					round = append(round, toolResult(call.ID, msg))
 					continue
 				}
+			}
+			if r.Tools == nil {
+				return errors.New("core: Tools not configured")
 			}
 			out, derr := r.Tools.Dispatch(ctx, call.Name, args)
 			if derr != nil {
@@ -212,10 +219,10 @@ func (r *Runner) toolSpecs() []llm.ToolSpec {
 	return r.Tools.Specs()
 }
 
-// verdict 默认放行（Guard 为 nil 时），生产路径注入 govern.Check。
+// verdict 对 nil Guard 默认拒绝（fail-closed）：治理优先项目不允许装配遗漏时整体放行。
 func (r *Runner) verdict(sess *Session, a govern.Action) govern.Verdict {
 	if r.Guard == nil {
-		return govern.Verdict{Decision: govern.Allow}
+		return govern.Verdict{Decision: govern.Deny, Rule: "guard-not-configured"}
 	}
 	return r.Guard(govern.GuardContext{RepoRoot: sess.Repo}, a)
 }

@@ -80,3 +80,86 @@ func (f *fakeTestRunner) Run(_ context.Context, _, cmd string, _ int) (string, s
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// 治理优先项目默认值必须 fail-closed：nil Guard 不得放行任何工具动作。
+func TestNilGuardFailsClosed(t *testing.T) {
+	mock := &llm.ScriptedMock{Steps: []llm.Completion{
+		{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "write_file", Arguments: `{"path":"calc.go","content":"fixed"}`}}}}, // Guard 缺失时该动作必须被拦截
+	}}
+	r := &Runner{
+		LLM:        mock,
+		Tools:      tools.RegistryOf(nil), // 空 Registry
+		Guard:      nil,                   // 关键：护栏未装配
+		HITL:       govern.NewManager(),
+		MaxTurns:   3,
+		TimeBudget: time.Minute,
+		Store:      memory.NewStore(t.TempDir()),
+	}
+	sess := &Session{ID: "s1", Repo: t.TempDir(), Task: "t", TestCmd: "go test ./...", MaxTurns: 3}
+	if err := r.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run 不应 panic，也不应以其他方式失败：%v", err)
+	}
+	// 该动作不得被执行：若存在对应 Step，其 Decision 必须为 Deny。
+	for _, st := range sess.Steps {
+		if st.ToolName == "write_file" {
+			if st.Decision != string(govern.Deny) {
+				t.Fatalf("nil Guard 下 write_file 被放行：decision=%q rule=%q", st.Decision, st.Rule)
+			}
+			if st.Rule != "guard-not-configured" {
+				t.Fatalf("预期规则 guard-not-configured，got %q", st.Rule)
+			}
+			return
+		}
+	}
+	t.Fatal("未记录 write_file 的治理决策步骤")
+}
+
+// Guard 返回 NeedsApproval 而 HITL 未装配时，应返回配置错误而非 panic。
+func TestNilHITLReturnsError(t *testing.T) {
+	mock := &llm.ScriptedMock{Steps: []llm.Completion{
+		{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "run_shell", Arguments: `{"command":"go test ./..."}`}}}}, // 触发审批路径
+	}}
+	r := &Runner{
+		LLM:   mock,
+		Tools: tools.RegistryOf(nil),
+		Guard: func(govern.GuardContext, govern.Action) govern.Verdict {
+			return govern.Verdict{Decision: govern.NeedsApproval, Rule: "test"}
+		},
+		HITL:     nil, // 关键：审批管理器未装配
+		MaxTurns: 3,
+		Store:    memory.NewStore(t.TempDir()),
+	}
+	sess := &Session{ID: "s1", Repo: t.TempDir(), Task: "t", TestCmd: "go test ./...", MaxTurns: 3}
+	err := r.Run(context.Background(), sess)
+	if err == nil {
+		t.Fatal("预期 nil HITL 返回配置错误，got nil")
+	}
+	if !strings.Contains(err.Error(), "HITL not configured") {
+		t.Fatalf("错误信息不符：%v", err)
+	}
+}
+
+// Tools 未装配时，工具分发应返回配置错误而非 panic。
+func TestNilToolsReturnsError(t *testing.T) {
+	mock := &llm.ScriptedMock{Steps: []llm.Completion{
+		{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "run_shell", Arguments: `{"command":"go test ./..."}`}}}}, // 触发工具分发路径
+	}}
+	r := &Runner{
+		LLM:   mock,
+		Tools: nil, // 关键：工具注册表未装配
+		Guard: func(govern.GuardContext, govern.Action) govern.Verdict {
+			return govern.Verdict{Decision: govern.Allow}
+		},
+		HITL:     govern.NewManager(),
+		MaxTurns: 3,
+		Store:    memory.NewStore(t.TempDir()),
+	}
+	sess := &Session{ID: "s1", Repo: t.TempDir(), Task: "t", TestCmd: "go test ./...", MaxTurns: 3}
+	err := r.Run(context.Background(), sess)
+	if err == nil {
+		t.Fatal("预期 nil Tools 返回配置错误，got nil")
+	}
+	if !strings.Contains(err.Error(), "Tools not configured") {
+		t.Fatalf("错误信息不符：%v", err)
+	}
+}
