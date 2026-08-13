@@ -116,13 +116,25 @@ func TestApprovalJSONCamelCase(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := string(b)
-	for _, key := range []string{`"id"`, `"sessionId"`, `"decidedBy"`} {
+	for _, key := range []string{`"id"`, `"sessionId"`, `"decidedBy"`, `"createdAt"`} {
 		if !strings.Contains(raw, key) {
 			t.Fatalf("缺 camelCase 键 %s: %s", key, raw)
 		}
 	}
 	if strings.Contains(raw, `"SessionID"`) || strings.Contains(raw, `"DecidedBy"`) {
 		t.Fatalf("出现 PascalCase 键: %s", raw)
+	}
+}
+
+// T15 Important：审批创建时间必须落盘/回传，控制台倒计时基于 CreatedAt。
+func TestApprovalCreatedAtSet(t *testing.T) {
+	m := NewManager()
+	ap, err := m.Create("s1", Action{}, "r", "risk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ap.CreatedAt.IsZero() {
+		t.Fatal("Create 应设置 CreatedAt")
 	}
 }
 

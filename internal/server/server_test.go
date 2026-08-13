@@ -216,6 +216,9 @@ func TestEventsStreamsSSE(t *testing.T) {
 	for sc.Scan() {
 		line := sc.Text()
 		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"type":"pending"`) && strings.Contains(line, ap.ID) {
+			if !strings.Contains(line, `"createdAt"`) {
+				t.Fatalf("pending 事件缺 createdAt: %s", line)
+			}
 			return // 收到初始 pending 快照事件
 		}
 	}
@@ -264,6 +267,9 @@ func TestEventsDecidedBroadcast(t *testing.T) {
 			if err := <-postDone; err != nil {
 				t.Fatalf("post: %v", err)
 			}
+			if !strings.Contains(line, `"createdAt"`) {
+				t.Fatalf("decided 事件缺 createdAt: %s", line)
+			}
 			return
 		}
 	}
@@ -310,6 +316,9 @@ func TestPendingApprovalsUsesPendingAll(t *testing.T) {
 		}
 		if _, bad := ap["SessionID"]; bad {
 			t.Fatalf("出现 PascalCase 键 SessionID，body=%s", rr.Body.String())
+		}
+		if ca, _ := ap["createdAt"].(string); ca == "" {
+			t.Fatalf("缺 createdAt 字段，body=%s", rr.Body.String())
 		}
 	}
 	if !ids[ap1.ID] || !ids[ap2.ID] {
@@ -360,6 +369,9 @@ func TestDecidedEventCarriesDecisionFromPolling(t *testing.T) {
 		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"type":"decided"`) && strings.Contains(line, ap.ID) {
 			if !strings.Contains(line, `"decision":"approved"`) {
 				t.Fatalf("decided 事件缺 decision 字段: %s", line)
+			}
+			if !strings.Contains(line, `"createdAt"`) {
+				t.Fatalf("decided 事件缺 createdAt: %s", line)
 			}
 			return
 		}

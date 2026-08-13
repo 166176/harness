@@ -28,6 +28,7 @@ type Approval struct {
 	Risk      string         `json:"risk"`
 	Status    ApprovalStatus `json:"status"`
 	DecidedBy string         `json:"decidedBy"`
+	CreatedAt time.Time      `json:"createdAt"`
 }
 
 // Manager 管理审批生命周期；同一会话同时最多一个 pending 审批。
@@ -56,7 +57,7 @@ func (m *Manager) Create(sessionID string, a Action, rule, risk string) (*Approv
 			return nil, errors.New("session already has pending approval")
 		}
 	}
-	ap := &Approval{ID: newID(), SessionID: sessionID, Action: a, Rule: rule, Risk: risk, Status: Pending}
+	ap := &Approval{ID: newID(), SessionID: sessionID, Action: a, Rule: rule, Risk: risk, Status: Pending, CreatedAt: time.Now()}
 	m.byID[ap.ID] = ap
 	m.bySession[sessionID] = ap.ID
 	m.decided[ap.ID] = make(chan struct{})

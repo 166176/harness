@@ -1,7 +1,7 @@
 // 后端契约（以 internal/server 实际实现为准，勿按 PLAN 旧描述）：
-// - GET  /api/approvals/pending → {"approvals":[{id,sessionId,action:{Tool,Args},rule,risk,status,decidedBy}]}
+// - GET  /api/approvals/pending → {"approvals":[{id,sessionId,action:{Tool,Args},rule,risk,status,decidedBy,createdAt}]}
 // - POST /api/approvals/{id}     body {"decision":"approved"|"denied"}
-// - GET  /api/events (SSE)：pending {type,id,sessionId,action,rule,risk,status} / decided {type,id,decision}，data: json\n\n
+// - GET  /api/events (SSE)：pending {type,id,sessionId,action,rule,risk,status,createdAt} / decided {type,id,decision,createdAt}，data: json\n\n
 // - GET  /api/sessions → ["s1",...]；GET /api/sessions/{id} → core.Session（无 json tag，Go 字段名 ID/Repo/Task/TestCmd/State/Steps/MaxTurns）
 // - GET  /api/key/status → {provider,mask,fingerprint}
 // - GET  /api/demo → [{name,pass,trace}]（T14 cli.go 接线为小写键）
@@ -19,6 +19,7 @@ export interface Approval {
   risk: string;
   status: string;
   decidedBy?: string;
+  createdAt?: string;
 }
 
 export type EventType = "pending" | "decided";
@@ -31,12 +32,14 @@ export interface PendingEvent {
   rule?: string;
   risk?: string;
   status?: string;
+  createdAt?: string;
 }
 
 export interface DecidedEvent {
   type: "decided";
   id: string;
   decision: string;
+  createdAt?: string;
 }
 
 export type ApprovalEvent = PendingEvent | DecidedEvent;

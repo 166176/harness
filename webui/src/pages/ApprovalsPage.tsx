@@ -12,8 +12,8 @@ import {
   subscribeEvents,
 } from "@/lib/api";
 
-// 后端 API 不暴露审批创建时间与超时配置；默认策略 approval_timeout_seconds=300。
-// 倒计时按“本页首次观测到该审批”起算，仅作近似提示（报告 concern）。
+// 倒计时优先取后端 createdAt（T16 起接口透出）+ 默认策略 approval_timeout_seconds=300；
+// 旧后端/无 createdAt 时回退到“本页首次观测到该审批”起算的近似值。
 const NOMINAL_TIMEOUT_SECONDS = 300;
 
 function fmtCountdown(secondsLeft: number): string {
@@ -21,6 +21,17 @@ function fmtCountdown(secondsLeft: number): string {
   const mm = Math.floor(s / 60);
   const ss = s % 60;
   return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+function secondsLeftFor(a: Approval, now: number, seenAt: Map<string, number>): number {
+  if (a.createdAt) {
+    const created = Date.parse(a.createdAt);
+    if (!Number.isNaN(created)) {
+      return NOMINAL_TIMEOUT_SECONDS - Math.floor((now - created) / 1000);
+    }
+  }
+  const seen = seenAt.get(a.id) ?? now;
+  return NOMINAL_TIMEOUT_SECONDS - Math.floor((now - seen) / 1000);
 }
 
 function argsSummary(action: ApiAction): string {
@@ -37,6 +48,7 @@ function approvalFromEvent(ev: PendingEvent): Approval {
     rule: ev.rule ?? "",
     risk: ev.risk ?? "",
     status: ev.status ?? "pending",
+    createdAt: ev.createdAt,
   };
 }
 
@@ -125,8 +137,7 @@ export function ApprovalsPage() {
         </Card>
       )}
       {approvals.map((a) => {
-        const seen = seenAt.current.get(a.id) ?? now;
-        const secondsLeft = NOMINAL_TIMEOUT_SECONDS - Math.floor((now - seen) / 1000);
+        const secondsLeft = secondsLeftFor(a, now, seenAt.current);
         return (
           <Card key={a.id}>
             <CardHeader>

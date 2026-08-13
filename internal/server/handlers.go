@@ -197,6 +197,7 @@ func approvalEvent(ap *govern.Approval) []byte {
 		"rule":      ap.Rule,
 		"risk":      ap.Risk,
 		"status":    string(ap.Status),
+		"createdAt": ap.CreatedAt,
 	})
 	return b
 }
@@ -204,12 +205,17 @@ func approvalEvent(ap *govern.Approval) []byte {
 // decidedEvent 生成 decided 事件：经 HITL.Get 读取终态，decision 小写输出。
 func (s *srv) decidedEvent(id string) []byte {
 	decision := ""
+	var createdAt *time.Time
 	if s.deps.HITL != nil {
 		if ap, ok := s.deps.HITL.Get(id); ok {
 			decision = strings.ToLower(string(ap.Status))
+			createdAt = &ap.CreatedAt
 		}
 	}
 	m := map[string]any{"type": "decided", "id": id, "decision": decision}
+	if createdAt != nil {
+		m["createdAt"] = *createdAt
+	}
 	b, _ := json.Marshal(m)
 	return b
 }
