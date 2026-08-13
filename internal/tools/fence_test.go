@@ -29,3 +29,26 @@ func TestResolveInsideRejectsEscape(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveInsideDeniesSymlinkEscapeToMissingTarget(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "sub", "link")
+	// 本环境（Windows 非管理员）无 symlink 创建权限：注入确定性假解析器，
+	// 模拟 sub/link → outside 的目录链接，验证「目标不存在 + 父目录越界」被拒。
+	orig := evalSymlinks
+	evalSymlinks = func(p string) (string, error) {
+		if p == link {
+			return outside, nil
+		}
+		return orig(p)
+	}
+	defer func() { evalSymlinks = orig }()
+
+	if _, err := ResolveInside(root, filepath.Join("sub", "link", "new.txt")); err == nil {
+		t.Fatal("父目录 symlink 指向根外且最终组件不存在时，应拒绝")
+	}
+}
