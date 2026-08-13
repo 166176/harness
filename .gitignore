@@ -1,0 +1,18 @@
+# 凭据与密钥（绝不提交）
+.env
+*.env
+
+# 构建产物
+bin/
+dist/
+gavel
+gavel.exe
+
+# 前端
+webui/node_modules/
+webui/dist/assets/
+!webui/dist/index.html
+
+# 系统
+.DS_Store
+Thumbs.db
