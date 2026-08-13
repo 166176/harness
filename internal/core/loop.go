@@ -125,33 +125,33 @@ func (r *Runner) Run(ctx context.Context, sess *Session) error {
 					return errors.New("core: HITL not configured")
 				}
 				fp := actionFingerprint(action)
-				if approvedFps[fp] { // §3.5 审批记忆：本会话已批准过该命令，直接放行
+				if approvedFps[fp] {
+					// §3.5 审批记忆：本会话已批准过该命令，直接放行。
+					// 不提前 append，交由下方统一 Dispatch 路径执行并记录一次。
 					step.Decision = string(govern.Approved)
 					step.Rule = "approval-memory"
-					sess.Steps = append(sess.Steps, step)
-					round = append(round, toolResult(call.ID, "本次会话已批准该命令指纹，自动放行"))
-					break
+				} else {
+					ap, cerr := r.HITL.Create(sess.ID, action, v.Rule, v.Rule)
+					if cerr != nil {
+						step.Result = cerr.Error()
+						sess.Steps = append(sess.Steps, step)
+						round = append(round, toolResult(call.ID, "拒绝：审批创建失败 "+cerr.Error()))
+						continue
+					}
+					// F1：审批进入 Await 前立即落盘，控制台才能枚举到首轮审批。
+					if err := r.persist(sess); err != nil {
+						return err
+					}
+					status := decider(ctx, ap)
+					if status != govern.Approved {
+						msg := "拒绝：审批未通过（" + string(status) + "）"
+						step.Result = msg
+						sess.Steps = append(sess.Steps, step)
+						round = append(round, toolResult(call.ID, msg))
+						continue
+					}
+					approvedFps[fp] = true // 记入审批记忆
 				}
-				ap, cerr := r.HITL.Create(sess.ID, action, v.Rule, v.Rule)
-				if cerr != nil {
-					step.Result = cerr.Error()
-					sess.Steps = append(sess.Steps, step)
-					round = append(round, toolResult(call.ID, "拒绝：审批创建失败 "+cerr.Error()))
-					continue
-				}
-				// F1：审批进入 Await 前立即落盘，控制台才能枚举到首轮审批。
-				if err := r.persist(sess); err != nil {
-					return err
-				}
-				status := decider(ctx, ap)
-				if status != govern.Approved {
-					msg := "拒绝：审批未通过（" + string(status) + "）"
-					step.Result = msg
-					sess.Steps = append(sess.Steps, step)
-					round = append(round, toolResult(call.ID, msg))
-					continue
-				}
-				approvedFps[fp] = true // 记入审批记忆
 			}
 			if r.Tools == nil {
 				return errors.New("core: Tools not configured")

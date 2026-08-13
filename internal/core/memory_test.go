@@ -57,7 +57,7 @@ func TestApprovalMemorySkipsSecondApproval(t *testing.T) {
 		_ = hitl.Decide(ap.ID, govern.Approved, "test")
 		return govern.Approved
 	}
-	mock := &llm.ScriptedMock{Steps: []llm.Completion{
+	mock := &recordingMock{steps: []llm.Completion{
 		{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "run_shell", Arguments: `{"command":"rm -rf .cache"}`}}}},
 		{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "2", Name: "run_shell", Arguments: `{"command":"rm -rf .cache"}`}}}},
 		{Message: llm.Message{Role: llm.RoleAssistant}, Done: true},
@@ -70,6 +70,9 @@ func TestApprovalMemorySkipsSecondApproval(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("同一命令指纹应只审批一次，实际 %d 次", calls)
 	}
+	if len(sess.Steps) != 2 {
+		t.Fatalf("两次工具调用应恰好 2 个 step（无双重追加），实际 %d", len(sess.Steps))
+	}
 	memoryStep := false
 	for _, st := range sess.Steps {
 		if st.Rule == "approval-memory" {
@@ -78,6 +81,21 @@ func TestApprovalMemorySkipsSecondApproval(t *testing.T) {
 	}
 	if !memoryStep {
 		t.Fatal("第二次相同命令应命中 approval-memory 规则")
+	}
+	// 消息完整性：每个 tool_call 恰一条 tool 结果（无同 ID 双消息）
+	toolCount := 0
+	seen := map[string]bool{}
+	for _, m := range mock.lastMsg {
+		if m.Role == llm.RoleTool {
+			toolCount++
+			if seen[m.ToolCallID] {
+				t.Fatalf("tool_call_id %s 出现重复 tool 消息", m.ToolCallID)
+			}
+			seen[m.ToolCallID] = true
+		}
+	}
+	if toolCount != 2 {
+		t.Fatalf("应有 2 条 tool 结果消息，实际 %d", toolCount)
 	}
 }
 
