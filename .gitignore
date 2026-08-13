@@ -5,8 +5,8 @@
 # 构建产物
 bin/
 dist/
-gavel
-gavel.exe
+/gavel
+/gavel.exe
 
 # 前端
 webui/node_modules/
