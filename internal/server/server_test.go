@@ -281,7 +281,8 @@ func TestPendingApprovalsUsesPendingAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Create("s2", govern.Action{Tool: "write_file", Args: map[string]any{"path": "x.go"}}, "r", "risk"); err != nil {
+	ap2, err := m.Create("s2", govern.Action{Tool: "write_file", Args: map[string]any{"path": "x.go"}}, "r", "risk")
+	if err != nil {
 		t.Fatal(err)
 	}
 	h := New(Deps{HITL: m, Store: st, Secret: &memSecret{}})
@@ -300,15 +301,19 @@ func TestPendingApprovalsUsesPendingAll(t *testing.T) {
 	if len(envelope.Approvals) != 2 {
 		t.Fatalf("PendingAll 驱动下首轮审批应可见（2 条），body=%s", rr.Body.String())
 	}
-	first := envelope.Approvals[0]
-	if first["id"] != ap1.ID {
-		t.Fatalf("id 键应 camelCase 且等于 %s，body=%s", ap1.ID, rr.Body.String())
+	ids := make(map[string]bool, len(envelope.Approvals))
+	for _, ap := range envelope.Approvals {
+		id, _ := ap["id"].(string)
+		ids[id] = true
+		if _, ok := ap["sessionId"]; !ok {
+			t.Fatalf("缺 camelCase 键 sessionId，body=%s", rr.Body.String())
+		}
+		if _, bad := ap["SessionID"]; bad {
+			t.Fatalf("出现 PascalCase 键 SessionID，body=%s", rr.Body.String())
+		}
 	}
-	if _, ok := first["sessionId"]; !ok {
-		t.Fatalf("缺 camelCase 键 sessionId，body=%s", rr.Body.String())
-	}
-	if _, bad := first["SessionID"]; bad {
-		t.Fatalf("出现 PascalCase 键 SessionID，body=%s", rr.Body.String())
+	if !ids[ap1.ID] || !ids[ap2.ID] {
+		t.Fatalf("pending 列表应包含 %s 与 %s（顺序无关），body=%s", ap1.ID, ap2.ID, rr.Body.String())
 	}
 }
 
