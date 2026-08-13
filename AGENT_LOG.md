@@ -56,3 +56,8 @@
 - 评审派发前必须把 diff 写入文件再交给评审 subagent——直接贴 diff 会污染上下文（本会话遵守）。
 - 子代理中断恢复靠 worktree + git log 状态核查，台账是唯一可靠的事实源。
 - 治理类机制（护栏/HITL）的"默认行为"必须 fail-closed 并配 nil 装配测试，两次评审都抓到真实漏洞。
+
+### [S7] CI/CD 执行记录（交付清单第 7 条证据）
+- **2026-08-14**：推送 NJU GitLab（`git@git.nju.edu.cn:166176/se-ai.git`，分支 `main`，commit `8cbb815`）后自动触发流水线。
+- **流水线 #320986（最后一次执行）**：job `unit-test`（镜像 golang:1.24，`go test ./...`，GOPROXY=goproxy.cn）——**PASS（用户已确认）**。
+- 说明：为防 runner 拉取依赖时 `proxy.golang.org` 不可达，`.gitlab-ci.yml` 已配置 `GOPROXY: https://goproxy.cn,direct`（本地冷启动验证时实证该域名不可达）。
