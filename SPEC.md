@@ -230,8 +230,10 @@ sequenceDiagram
 1. 危险命令模式（正则 + 归一化）→ `approval`：`rm -rf` / `rm -fr` / `del /s`、`git push --force`、`git reset --hard`、`git clean -fdx`、`curl … | sh`、`DROP DATABASE`、`mkfs`、`format c:`
 2. 外发网络命令（`curl`/`wget`，非白名单域）→ `approval`
 3. 密钥泄露检测：动作参数/文件内容与已存 key 的指纹比对命中 → `deny`
-4. 范围围栏：路径归一化 + symlink 解析后越出 `--repo` 根 → `deny`
+4. 范围围栏（**双层**）：govern 层对 `Args["path"]` 做 `path.Clean` 冒烟判定（绝对路径、等于 `..`、或以 `../` 开头 → `deny`）；tools 层 `ResolveInside` 执行归一化 + symlink 解析的完整围栏。govern 层快而浅、tools 层慢而全，任何一层拒绝即拒绝。
 5. 修改护栏自身（写仓库内 `.gavel/` 目录、覆盖会话使用的 policy 文件）→ `approval`（注：`~/.gavel/` 为 harness 全局数据目录，不在仓库内，不受此规则管辖）
+
+**Rule 字段约定**（审计追溯与审批控制台风险展示用）：固定规则返回短名（`secret-leak`、`fence`）；命中 deny/approval 模式时返回命中模式文本；allow 时为空字符串。
 
 **实现要点**：`Guardrail(action, policy, ctx) → Verdict{allow|deny|approval, matchedRule}`；测试直接构造 `Action{Command: "rm -rf /"}` 断言 `approval`，构造 `Action{Path: "../../etc/passwd"}` 断言 `deny`，**全程无 LLM**。
 
@@ -336,6 +338,7 @@ loop:
 | **凭据**：go-keyring + .env 回退 | OS 级安全 + 云端容器可行；威胁模型清晰 |
 | **部署**：Render（Free，Docker 原生，无需绑卡） | 免费可公开访问；Railway 为替补方案 |
 | **测试**：`go test`（表驱动）+ 表驱动 mock | 一键 `make test` 全离线 |
+| **开发前置**：Go 1.22+、Node 18+（前端构建）；网络受限时 `go env -w GOPROXY=https://goproxy.cn,direct` | proxy.golang.org 在部分网络不可达（冷启动验证两轮实证）；README 必须写明工具链安装方式 |
 
 ## 9. 验收标准（客观判定）
 

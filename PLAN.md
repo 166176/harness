@@ -19,6 +19,7 @@
 - 全局数据目录 `~/.gavel/`；仓库内 `.gavel/` 目录与 policy 文件受护栏保护
 - 包路径统一 `internal/`（不对外暴露）；每个 task 结束必须 commit（真实 git 身份：孙其瑶）
 - 测试命令统一 `go test ./...`；一键入口 `make test`
+- 开发前置：Go 1.22+ 与 Node 18+ 必须预装（README 写明安装方式）；网络受限时 `go env -w GOPROXY=https://goproxy.cn,direct`（proxy.golang.org 可能不可达，冷启动验证两轮实证）
 
 ## 文件结构总览
 
@@ -766,7 +767,7 @@ func Check(p Policy, gc GuardContext, a Action) Verdict {
 	// ...
 }
 ```
-（注：实现要点——① 遍历 Args 序列化为字符串，若包含 `gc.SecretKey` → `Deny{rule:"secret-leak"}`；② 文件类工具的 path 经 `path.Clean` 判断越界 → `Deny{rule:"fence"}`；③ shell 命令依次匹配 deny_patterns → `Deny`，approval_patterns → `Approval`；④ 其余 → `Allow`。具体代码由执行者按此要点写出，测试即验收。）
+（注：实现要点——① 遍历 Args 的字符串值，若包含 `gc.SecretKey` → `Deny{rule:"secret-leak"}`；② 文件类工具的 `Args["path"]` 经 `path.Clean` 冒烟判定：绝对路径、等于 `..`、或以 `../` 开头 → `Deny{rule:"fence"}`（完整 symlink 围栏在 tools 层 Task 3，govern 层只做冒烟）；③ shell 命令依次匹配 deny_patterns → `Deny`，approval_patterns → `Approval`，`Rule` 字段 = 命中模式文本；④ 其余 → `Allow{Rule:""}`。具体代码由执行者按此要点写出，测试即验收。）
 
 - [ ] **Step 4: 运行确认通过**
 
@@ -1806,7 +1807,8 @@ ENTRYPOINT ["/gavel", "serve", "--port", "8080"]
 - `.goreleaser.yaml`：`builds: [{main: ./cmd/gavel, goos: [windows, linux, darwin], goarch: [amd64]}]`，archives 免 tar（windows exe）
 - `.github/workflows/ci.yml`：job `unit-test`（`go test ./...` + `cd webui && npm ci && npx vitest run`）+ job `docker`（build + push ghcr.io/166176/harness）+ job `release`（goreleaser，tag 触发）
 - `.gitlab-ci.yml`：job **`unit-test`**（镜像 golang:1.23，`go test ./...`）
-- `README.md`：简介 / 安装 / 运行 / 分发命令 / 目录结构 / 安全边界说明 / key 在目标机的安全配置（六章必备）+ 第三方依赖与许可证列表（go-keyring MIT、yaml.v3 Apache-2.0、x/term BSD、shadcn/ui MIT）
+- `README.md`：简介 / 安装 / 运行 / 分发命令 / 目录结构 / 安全边界说明 / key 在目标机的安全配置（六章必备）+ 第三方依赖与许可证列表（go-keyring MIT、yaml.v3 Apache-2.0、x/term BSD、shadcn/ui MIT）+ 工具链前置（Go/Node 安装方式、GOPROXY 建议）
+- `go mod tidy`：清理 `yaml.v3` 的 `// indirect` 标记（冷启动 agent 留下的待办）
 
 - [ ] **Step 4: 运行确认通过**
 

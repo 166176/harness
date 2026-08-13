@@ -73,17 +73,43 @@
 - 自审结论：spec 覆盖无缺口；无占位符；跨 task 类型一致。
 - 两点主动偏离 skill 默认值的决定（已记录）：① PLAN 保存到仓库根 `PLAN.md` 而非 `docs/superpowers/plans/`（课程 §4.3 交付要求优先）；② 在正式实现前插入课程 §4.5 冷启动验证闸门（课程要求优先于 skill 的"立即执行"选项）。
 
-## 6. 冷启动验证（§4.5，待执行后补全）
+## 6. 冷启动验证（§4.5，已执行）
 
-- **第二 agent**：OpenCode（与主开发 agent 类型不同）
-- **试跑 task**：PLAN 的 T2（LLM 抽象+MockLLM）与 T5（护栏规则引擎）
-- **操作要求**：全新会话、不导入本会话历史；仅提供 SPEC.md + PLAN.md；遇到不确定之处暂停询问，而非凭猜测继续。
-- **记录模板**（验证后填写）：
-  - 第二个 agent 在哪里暂停并提问？
-  - 暴露了哪些 spec 缺陷（哪些假设没写明文）？
-  - 它与原意的解读差异：spec 写错还是它读错？
-  - 产出与预期差距？
-  - 据此对 SPEC/PLAN 的修订（附修订前后 diff）。
+- **第二 agent**：OpenCode（与主开发 agent 类型不同；试跑模型 `deepseek/deepseek-chat`）
+- **试跑 task**：PLAN 的 T2（LLM 抽象+MockLLM）与 T5（护栏规则引擎），分支 `coldstart-validation`
+- **过程**：先以免费模型试跑（中途因环境卡顿终止），随后配置 DeepSeek key 重跑完成。均只给 SPEC.md + PLAN.md，无任何对话历史。
+
+### 6.1 它在哪里暂停并提问（完整清单见分支上的 COLDSTART_QUESTIONS.md）
+
+1. **工具链缺失（两轮 agent 都在此停顿）**：`go` 不在 PATH——第一轮 agent 自行搜遍标准安装路径与包管理器，尝试 `winget install` 卡死；文档没有写明「需预装 Go 1.22+」这一前置条件。→ spec 缺陷 #1
+2. **`proxy.golang.org` 不可达（两轮都撞上）**：agent 自行切换到 `goproxy.cn` 镜像解决，但文档没写网络前置。→ spec 缺陷 #2
+3. **Q1 围栏语义**：PLAN 说「path 经 path.Clean 判断越界」，但 SPEC 又说「symlink 解析后越出 --repo 根」，且测试用空 `GuardContext{}`——govern 层到底做不做完整围栏？agent 按「govern 冒烟 + tools 完整」分层实现并提问确认。→ spec 缺陷 #3
+4. **Q2 规则命名**：`Verdict.Rule` 对 shell 命中该填什么未规定，agent 选择「命中模式文本」并记录待确认。→ spec 缺陷 #4
+5. **Q3**：`yaml.v3` 落入 `// indirect` 标记，agent 选择不动 `go mod tidy`（避免越界改动），留给后续任务。
+
+### 6.2 解读差异：spec 写错还是它读错
+
+- **都不是误读**：4 个问题全部是 spec 未写明文（underspecified），agent 没有一处把已写明的约束读错；它对「不凭猜测」的执行也很克制——不确定处全部透明记录而非静默实现。
+- 唯一值得商榷的是它在 T1 未完整（缺 Makefile/version 包）时没有提问而直接继续 T2/T5——但这是任务范围外，属合理判断。
+
+### 6.3 产出与预期差距
+
+- T2、T5 严格按红→绿→commit 完成，接口签名与 PLAN 一字不差，5 个护栏用例全绿，`go test ./...` 通过（commit `acd521e`、`6bb0f37`）。
+- 差距仅集中在 Check() 内部实现细节（Q1/Q2），恰好是 PLAN 里「具体代码由执行者按此要点写出」自我授权的部分——说明这种授权点正是冷启动验证最该盯的地方。
+- 人工两阶段评审结论：spec 合规通过；代码质量 3 条 Minor（正则每次调用重编译、密钥比对只扫顶层字符串值、yaml 解析错误被忽略），留待实现阶段重构。
+
+### 6.4 据此对 SPEC/PLAN 的修订（修订前后 diff）
+
+1. **SPEC §6.2 规则 4**（围栏语义）：
+   - 前：`范围围栏：路径归一化 + symlink 解析后越出 --repo 根 → deny`
+   - 后：`范围围栏（双层）：govern 层对 Args["path"] 做 path.Clean 冒烟判定（绝对路径、..、../ 前缀 → deny）；tools 层 ResolveInside 执行归一化 + symlink 解析的完整围栏。任何一层拒绝即拒绝。`
+2. **SPEC §6.2 新增**：`Rule 字段约定：固定规则短名（secret-leak/fence）；命中模式返回模式文本；allow 为空。`
+3. **SPEC §8 新增行**：`开发前置：Go 1.22+、Node 18+；网络受限时 go env -w GOPROXY=https://goproxy.cn,direct；README 必须写明工具链安装方式。`
+4. **PLAN Global Constraints 新增**：工具链前置 + GOPROXY 一行（同 3）。
+5. **PLAN T5 实现要点 ② 改写**：明确 govern 层冒烟判定的三个条件与 tools 层完整围栏的分工；明确 Rule 字段取值。
+6. **PLAN T16 新增**：`go mod tidy` 清理 indirect 标记；README 补充工具链前置章节。
+
+**验证结论：SPEC/PLAN 整体质量良好**——结构、接口、TDD 步骤经受住了陌生 agent 的检验；真正的缺陷集中在「环境前置」与「授权点的内部细节」，均已修订。
 
 ## 7. 反思：brainstorming 做得好的地方与不满
 
