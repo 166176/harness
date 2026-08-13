@@ -4,5 +4,7 @@ stages:
 unit-test:
   stage: test
   image: golang:1.24
+  variables:
+    GOPROXY: https://goproxy.cn,direct
   script:
     - go test ./...
