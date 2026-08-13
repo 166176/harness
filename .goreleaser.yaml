@@ -1,0 +1,18 @@
+# GoReleaser 配置：三平台（windows/linux/darwin）× amd64 单文件二进制，免 tar
+version: 2
+
+builds:
+  - main: ./cmd/gavel
+    id: gavel
+    binary: gavel
+    goos:
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - formats: [binary]

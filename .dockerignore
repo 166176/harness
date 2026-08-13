@@ -1,0 +1,22 @@
+# 版本控制与元数据
+.git
+.worktrees
+.superpowers
+AGENT_LOG.md
+SPEC.md
+PLAN.md
+SPEC_PROCESS.md
+COLDSTART_QUESTIONS.md
+
+# 本机构建产物
+bin
+gavel
+gavel.exe
+
+# 前端依赖与临时产物（容器内 npm ci 重装，避免 Windows 平台二进制混入）
+webui/node_modules
+webui/dist
+
+# 凭据与密钥（绝不进镜像）
+.env
+*.env
