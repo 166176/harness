@@ -34,3 +34,25 @@
 
 ## 待办日志槽位（实现阶段将逐 task 填充）
 - 每个 task：时间戳、task 编号、触发技能、subagent 输出片段/commit hash、人工修改内容与理由、教训。
+
+## 实现阶段（2026-08-13，subagent-driven-development）
+
+### [S4] 实现全流程总览
+- **工作流**：using-git-worktrees（每模块一个 worktree 分支）+ subagent-driven-development（每 task 新鲜实现 subagent + 任务评审 + 修复轮次）+ TDD 强制 + SDD 台账（`.superpowers/sdd/PLAN.md/progress.md`）
+- **最终状态**：17 task + F1 + 终审修复全部完成并合并 master；`go test ./...` 13 包全绿；全分支终审 R1 后 CLEAN
+- **task→commit 映射** 见 PLAN.md「实现状态」表
+- **修复轮次统计**：T3 R1（symlink 逃逸）、T4 R1（schema command）、T6 R1+R2（超时终态/panic）、T7 R1（pytest 回退）、T11 R1（nil fail-closed）、F1 R1（flaky 断言）、终审 R1（审批记忆双重追加）；每条均经定向复审 CLEAN
+- **评审拦截的实质缺陷**（subagent 输出被评审修正的证据）：T3 symlink 逃逸、T6 Await 并发窄窗口+未知 id panic、T11 nil Guard fail-open、F1 首轮审批控制台失明、终审 C1/I1/I2、审批记忆双重追加
+
+### [S5] 偏离记录（如实登记，课程 §3.6 允许在记录与解释前提下的偏离）
+1. **subagent 网络中断 5 次**（T16 实现者断线 2 次、终审修复实现者断线 1 次、评审派发 ECONNRESET 1 次、空响应 1 次）：对策=断点核查 worktree 状态后派续作；T16 与终审 I1/I2 的收尾由**协调者直接补写代码并代提交**，随后均经独立 subagent 定向复审通过——违反 SDD「控制器不写代码」规范，但保证了交付完整性与复审监督。
+2. **Open Design skill 未安装**：WebUI 采用 shadcn/ui 设计系统的手写等价组件（CSS 变量 + 组件结构遵循 shadcn 规范），SPEC §8 已声明 shadcn/ui 为所选设计系统；过程偏差为未走 Open Design skill 流程。
+3. **GitHub PR 工作流本地化**：每模块 branch + merge commit 历史完整，但 PR 由本地 merge 代替（本会话无法创建 GitHub 平台 PR）；仓库历史中每个模块的 commits 与 merge 记录齐全，可作为 PR 等价证据。
+4. **gofmt 全局收尾**由协调者执行（T1 登记的 deferred minor 闭环）。
+5. **Git 提交身份**：孙其瑶（全局配置）；首个 commit 曾临时使用占位身份，随后已改用真实身份。
+
+### [S6] 关键教训
+- 写 PLAN 时把"授权点"（如"具体代码由执行者按此要点写出"）的验收标准写成可断言测试，能显著减少 subagent 的自由裁量与评审循环。
+- 评审派发前必须把 diff 写入文件再交给评审 subagent——直接贴 diff 会污染上下文（本会话遵守）。
+- 子代理中断恢复靠 worktree + git log 状态核查，台账是唯一可靠的事实源。
+- 治理类机制（护栏/HITL）的"默认行为"必须 fail-closed 并配 nil 装配测试，两次评审都抓到真实漏洞。

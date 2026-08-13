@@ -8,6 +8,32 @@
 
 **Tech Stack:** Go 1.22+（标准库为主；go-keyring、gopkg.in/yaml.v3、golang.org/x/term）、React + Vite + shadcn/ui（Open Design）、Docker（distroless）、Render（云端）、GitHub Actions + GitLab CI、goreleaser。
 
+## 实现状态（Task → commit hash，全部完成）
+
+| Task | 内容 | 完成 commit（含修复轮次） | 评审 |
+|---|---|---|---|
+| T1 | 脚手架（version+Makefile） | `5479346` | ✅ |
+| T2 | LLM 抽象+MockLLM（冷启动产出） | `acd521e` | ✅ |
+| T3 | 路径围栏+文件工具 | `aaacfcb`→R1 `82c28d2` | ✅ |
+| T4 | shell/test 工具+注册 | `6288b63` `41990d2`→R1 `b60db47` | ✅ |
+| T5 | 护栏规则引擎（冷启动产出） | `6bb0f37` | ✅ |
+| T6 | HITL 状态机 | `e9a8217`→R1 `10e41f3`→R2 `7993571` | ✅ |
+| T7 | 反馈解析器 | `0a18016`→R1 `bbe6e3f` | ✅ |
+| T8 | 记忆存储 | `0b2b7d5` | ✅ |
+| T9 | 配置加载 | `b034e0a` | ✅ |
+| T10 | 凭据安全存储 | `d86e866` | ✅ |
+| T11 | Agent 主循环 | `5a5860d`→R1 `555cfc8` | ✅ |
+| T12 | REST+SSE+静态内嵌 | `5225543` | ✅ |
+| F1 | 审批可见性（T12 评审 Critical 转派） | `c09ff71` `c87f283` `975e428`→R1 `a7c0604` | ✅ |
+| T13 | 机制演示三场景 | `ada4a6a` | ✅ |
+| T14 | CLI 装配 | `8233e48` | ✅ |
+| T15 | WebUI（Open Design shadcn/ui） | `413b64c` | ✅ |
+| T16 | 分发+CI+文档+真实适配器 | `b4ee4ae` `9a72e95` `facaeb9` `e2e9568` `0df053e` `9facf21` | ✅ |
+| T17 | 样例仓库+验收步骤 | `4e698e0` | ✅ |
+| 终审 | C1 审批链路 / I1 记忆维度 / I2 正则校验 | `382eb02` `5a13b9e`→R1 `7f598fb` | ✅ |
+
+> 过程证据：SDD 台账 `.superpowers/sdd/PLAN.md/progress.md`（含每 task 的修复轮次与 deferred minors）；`AGENT_LOG.md` 实现阶段日志；`SPEC_PROCESS.md` §6 冷启动验证记录。
+
 ## Global Constraints
 
 - Go module 路径：`github.com/166176/harness`；Go 版本下限 1.22
