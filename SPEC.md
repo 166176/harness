@@ -330,6 +330,7 @@ loop:
 |---|---|
 | **Go** | 单静态二进制分发最干净；`go-keyring` 直连 Windows Credential Manager；`go test` 天然支持 mock 注入；对齐 Copilot CLI 的 CLI-harness 路线；subagent 开发效率高于 Rust |
 | **LLM 适配**：单一 OpenAI 兼容 `/v1/chat/completions` + 工具调用，标准库 `net/http` 直连 | 一个适配器覆盖主流供应商与本地 Ollama；不用 SDK/框架，符合 §A.4 边界；动作以结构化 tool_calls 返回，解析全自控 |
+| **LLM 供应商**：默认 DeepSeek（`deepseek-chat`，OpenAI 兼容端点 `https://api.deepseek.com`），base_url/model 可配置 | 性价比高、国内直连、支持工具调用；代码不绑定任何供应商 |
 | **WebUI**：React + Vite（构建产物 `go:embed` 内嵌） | 业界主流"后端核心 + TS 前端"形态；单文件可携带；SSE 实时审批推送（兜底轮询） |
 | **Open Design**：使用其 **shadcn/ui** 设计系统与 skill | 满足 §3.6 条件要求；审批控制台用 shadcn/ui 组件（Dialog/Badge/Tabs 等）实现，风格统一 |
 | **凭据**：go-keyring + .env 回退 | OS 级安全 + 云端容器可行；威胁模型清晰 |
@@ -355,5 +356,5 @@ loop:
 | 3 | SSE 经 Render 反代被缓冲 | 设置 `X-Accel-Buffering: no` + 前端 2s 轮询兜底 |
 | 4 | subagent 把护栏写成提示词 | PLAN 中每个治理 task 的验证步骤强制为"构造动作→断言拦截"的代码测试（§A.4-C 判据写进 task 描述） |
 | 5 | 测试输出格式多样导致解析失败 | 起步支持 go test 与 pytest 两种模式，其余归入 `未知` 分类并原样回灌 |
-| 6 | **未决**：真实 LLM 验收用哪个供应商（DeepSeek / GLM / Moonshot / 其它） | 与代码无关，实现阶段前定即可；key 通过 `gavel key set` 录入 |
-| 7 | **未决**：GitHub 仓库名与公开/私有策略 | 公开仓；私有则加助教协作者 |
+| 6 | ~~未决：LLM 供应商~~ **已决**：真实验收使用 **DeepSeek**（`deepseek-chat`），key 通过 `gavel key set` 录入 | DeepSeek 走 OpenAI 兼容适配器，零额外代码 |
+| 7 | ~~未决：GitHub 仓库~~ **已决**：`https://github.com/166176/harness.git`（公开仓；若改私有需加助教协作者） | 需在首次推送前配置真实 git 身份 |
