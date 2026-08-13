@@ -1,6 +1,6 @@
 module github.com/166176/harness
 
-go 1.22
+go 1.24
 
 require (
 	github.com/zalando/go-keyring v0.2.8
