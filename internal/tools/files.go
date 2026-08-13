@@ -28,7 +28,7 @@ func (t *fileTool) Name() string { return t.name }
 func (t *fileTool) Spec() llm.ToolSpec {
 	p := t.params
 	if p == nil {
-		// 未显式声明 schema 的工具（如 run_shell/run_test）保持原有 path 属性回退。
+		// 防御性回退：所有现有工具均已显式声明 schema，此处仅兜底未来新增工具。
 		p = map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}}
 	}
 	return llm.ToolSpec{Name: t.name, Description: t.desc, Parameters: p}

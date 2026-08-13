@@ -47,6 +47,7 @@ func (b *buf) Write(p []byte) (int, error) { b.s += string(p); return len(p), ni
 
 func ShellTool(r CommandRunner, root string) Tool {
 	return &fileTool{name: "run_shell", desc: "在仓库根执行 shell 命令（60s 超时）", root: root,
+		params: fileParams([]string{"command"}, []string{"command"}),
 		fn: func(ctx context.Context, _ string, a map[string]any) (string, error) {
 			out, e, code, err := r.Run(ctx, root, argStr(a, "command"), 60)
 			if err != nil {
@@ -59,6 +60,7 @@ func ShellTool(r CommandRunner, root string) Tool {
 // TestTool 执行会话测试命令并返回原始输出（结构化解析在 feedback 层）。
 func TestTool(r CommandRunner, root, testCmd string) Tool {
 	return &fileTool{name: "run_test", desc: "运行项目测试命令", root: root,
+		params: fileParams([]string{"command"}, nil),
 		fn: func(ctx context.Context, _ string, a map[string]any) (string, error) {
 			cmd := testCmd
 			if override := argStr(a, "command"); override != "" {

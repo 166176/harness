@@ -49,3 +49,45 @@ func TestFileToolSpecsDeclareParameters(t *testing.T) {
 		}
 	}
 }
+
+// eqStrings 比较字符串切片，nil 与空切片视为相等。
+func eqStrings(a, b []string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// TestShellToolSpecDeclaresCommand 校验 run_shell/run_test 的 Spec().Parameters
+// 声明 command 属性（R1 修复：真实 LLM 按 schema 生成参数时必须产生 command 字段）。
+func TestShellToolSpecDeclaresCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		tool     Tool
+		required []string
+	}{
+		{"run_shell", ShellTool(&fakeRunner{}, "/repo"), []string{"command"}},
+		{"run_test", TestTool(&fakeRunner{}, "/repo", "go test ./..."), nil},
+	}
+	for _, tc := range tests {
+		params := tc.tool.Spec().Parameters
+		if params["type"] != "object" {
+			t.Fatalf("%s: Parameters 缺 type=object，got %v", tc.name, params["type"])
+		}
+		props, ok := params["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: properties 缺失或类型错误，got %v", tc.name, params["properties"])
+		}
+		p, ok := props["command"].(map[string]any)
+		if !ok || p["type"] != "string" {
+			t.Fatalf("%s: 属性 command 应为 {type: string}，got %v", tc.name, props["command"])
+		}
+		var req []string
+		if r, ok := params["required"].([]string); ok {
+			req = r
+		}
+		if !eqStrings(req, tc.required) {
+			t.Fatalf("%s: required 应为 %v，got %v", tc.name, tc.required, params["required"])
+		}
+	}
+}
