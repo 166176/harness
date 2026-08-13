@@ -42,3 +42,27 @@ func TestSinglePendingPerSession(t *testing.T) {
 		t.Fatal("同会话第二个 pending 应报错")
 	}
 }
+
+func TestAwaitTimeoutRaceWithConcurrentDecideReturnsRealStatus(t *testing.T) {
+	m := NewManager()
+	a, err := m.Create("s1", Action{}, "r", "risk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 模拟窄窗口交错：time.After 已触发、超时分支落地 Timeout 决策前，
+	// 外部并发 Decide 先落地 Approved。hook 在超时分支内、落地 Timeout 前执行。
+	var hookErr error
+	m.BeforeTimeoutDecide = func() {
+		hookErr = m.Decide(a.ID, Approved, "concurrent")
+	}
+	st := m.Await(context.Background(), a.ID, 10*time.Millisecond)
+	if hookErr != nil {
+		t.Fatalf("hook 内 Decide 失败: %v", hookErr)
+	}
+	if st != Approved {
+		t.Fatalf("Await 返回值应与真实终态一致（approved），got %s", st)
+	}
+	if got := m.status(a.ID); got != Approved {
+		t.Fatalf("真实终态应为 approved，got %s", got)
+	}
+}

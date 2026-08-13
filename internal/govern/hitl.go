@@ -32,6 +32,9 @@ type Manager struct {
 	byID      map[string]*Approval
 	bySession map[string]string // sessionID -> approvalID
 	decided   map[string]chan struct{}
+
+	// BeforeTimeoutDecide 是测试钩子：在 Await 超时分支落地 Timeout 决策前被调用（nil 时无操作）。
+	BeforeTimeoutDecide func()
 }
 
 func NewManager() *Manager {
@@ -59,8 +62,11 @@ func (m *Manager) Await(ctx context.Context, id string, timeout time.Duration) A
 	case <-ch:
 		return m.status(id)
 	case <-time.After(timeout):
+		if m.BeforeTimeoutDecide != nil {
+			m.BeforeTimeoutDecide()
+		}
 		_ = m.Decide(id, Timeout, "timeout") // fail-closed
-		return Timeout
+		return m.status(id)
 	case <-ctx.Done():
 		_ = m.Decide(id, Timeout, "cancel")
 		return Timeout
