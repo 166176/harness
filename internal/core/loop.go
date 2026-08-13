@@ -32,6 +32,7 @@ type Runner struct {
 	Store           *memory.Store
 	Feedback        func(format, out string, code int) []feedback.TestFailure            // 注入，测试可替换
 	ApprovalDecider func(ctx context.Context, ap *govern.Approval) govern.ApprovalStatus // 测试注入自动 deny
+	Hint            string                                                               // 项目约定（按需装配进 system 提示，§3.5）
 }
 
 var exitRe = regexp.MustCompile(`exit=(\d+)`)
@@ -66,6 +67,7 @@ func (r *Runner) Run(ctx context.Context, sess *Session) error {
 	var lastFingerprint string
 	consecutive := 0
 	latestFeedback := ""
+	approvedFps := map[string]bool{} // §3.5 审批记忆：会话内已批准命令指纹自动放行
 
 	for turn := 0; turn < maxTurns; turn++ {
 		if !deadline.IsZero() && !time.Now().Before(deadline) {
@@ -122,6 +124,14 @@ func (r *Runner) Run(ctx context.Context, sess *Session) error {
 				if r.HITL == nil {
 					return errors.New("core: HITL not configured")
 				}
+				fp := actionFingerprint(action)
+				if approvedFps[fp] { // §3.5 审批记忆：本会话已批准过该命令，直接放行
+					step.Decision = string(govern.Approved)
+					step.Rule = "approval-memory"
+					sess.Steps = append(sess.Steps, step)
+					round = append(round, toolResult(call.ID, "本次会话已批准该命令指纹，自动放行"))
+					break
+				}
 				ap, cerr := r.HITL.Create(sess.ID, action, v.Rule, v.Rule)
 				if cerr != nil {
 					step.Result = cerr.Error()
@@ -141,6 +151,7 @@ func (r *Runner) Run(ctx context.Context, sess *Session) error {
 					round = append(round, toolResult(call.ID, msg))
 					continue
 				}
+				approvedFps[fp] = true // 记入审批记忆
 			}
 			if r.Tools == nil {
 				return errors.New("core: Tools not configured")
@@ -213,6 +224,9 @@ func (r *Runner) systemPrompt(sess *Session) string {
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
 	}
 	b.WriteString("每轮可调用工具；收到 run_test 反馈后继续修改，直到测试全绿。")
+	if r.Hint != "" {
+		fmt.Fprintf(&b, "\n项目约定（跨会话记忆）：\n%s\n", r.Hint)
+	}
 	return b.String()
 }
 
@@ -275,6 +289,17 @@ func fingerprint(m llm.Message) string {
 		return ""
 	}
 	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// actionFingerprint 归一化动作指纹（tool + args JSON，map 序列化键序确定），
+// 供会话内审批记忆使用（§3.5）。
+func actionFingerprint(a govern.Action) string {
+	b, err := json.Marshal(a.Args)
+	if err != nil {
+		b = []byte(fmt.Sprintf("%v", a.Args))
+	}
+	sum := sha256.Sum256([]byte(a.Tool + "|" + string(b)))
 	return hex.EncodeToString(sum[:])
 }
 
