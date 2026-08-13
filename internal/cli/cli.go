@@ -59,12 +59,13 @@ var newLLMClient = func(baseURL, model, apiKey string) llm.Client {
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	kr := secret.KeyringProvider()
 	denv := secret.DotenvProvider(".env")
+	genv := secret.EnvProvider("GAVEL_API_KEY") // 云端容器模式（Render 等平台注入）
 	a := &app{
 		stdin:   stdin,
 		stdout:  stdout,
 		stderr:  stderr,
 		keyring: kr,
-		secret:  secret.Chain(kr, denv),
+		secret:  secret.Chain(kr, denv, genv),
 		dotenv:  denv,
 	}
 	return a.run(normalizeArgs(args))

@@ -111,7 +111,7 @@ goreleaser release --clean
 ## 安全边界
 
 - **密钥绝不落日志、绝不回显明文**：`/api/key/status` 只返回 provider/mask/fingerprint；日志与错误信息不含 key；`.env` 以 0600 权限写入且被 `.gitignore` 排除
-- **目标机密钥配置**：桌面端用 `gavel key set`（TTY 隐藏录入 → 系统凭据库）；容器/云端无 TTY，挂载或注入 `.env`（单行 `GAVEL_API_KEY=<value>`），如 `docker run -e GAVEL_API_KEY=...` 或 Render 的 Environment 变量注入
+- **目标机密钥配置**：桌面端用 `gavel key set`（TTY 隐藏录入 → 系统凭据库）；容器/云端无 TTY，注入环境变量 `GAVEL_API_KEY`（如 `docker run -e GAVEL_API_KEY=...` 或 Render 的 Environment 变量注入）。运行时读取优先级：系统凭据库 → `.env` 文件 → `GAVEL_API_KEY` 环境变量（明文风险见 SPEC §4.2）
 - **工具围栏**：文件工具路径解析后必须落在仓库根内（越界拒绝）；`run_shell`/`run_test` 在仓库根执行且有超时
 - **护栏 fail-closed**：策略解析失败、未知错误一律拦截进入审批或拒绝；高危命令（`rm -rf`、`git push --force`、`curl|sh` 等）需人工批准；deny 模式（如 `chmod 777 /etc`）直接拒绝
 - **审批接口无鉴权**：控制台定位为可信内网/本机；公网部署请在反向代理层加认证
