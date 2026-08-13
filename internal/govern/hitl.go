@@ -3,7 +3,9 @@ package govern
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,11 +21,13 @@ const (
 
 // Approval 记录单个会话内一次待人工决断的动作。
 type Approval struct {
-	ID, SessionID string
-	Action        Action
-	Rule, Risk    string
-	Status        ApprovalStatus
-	DecidedBy     string
+	ID        string         `json:"id"`
+	SessionID string         `json:"sessionId"`
+	Action    Action         `json:"action"`
+	Rule      string         `json:"rule"`
+	Risk      string         `json:"risk"`
+	Status    ApprovalStatus `json:"status"`
+	DecidedBy string         `json:"decidedBy"`
 }
 
 // Manager 管理审批生命周期；同一会话同时最多一个 pending 审批。
@@ -116,6 +120,27 @@ func (m *Manager) Pending(sessionID string) (*Approval, bool) {
 	return ap, true
 }
 
+// PendingAll 返回全部 pending 审批（跨会话），供审批控制台枚举。
+func (m *Manager) PendingAll() []*Approval {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	aps := make([]*Approval, 0, len(m.byID))
+	for _, ap := range m.byID {
+		if ap.Status == Pending {
+			aps = append(aps, ap)
+		}
+	}
+	return aps
+}
+
+// Get 按 id 返回审批（含已决），未命中返回 false。
+func (m *Manager) Get(id string) (*Approval, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ap, ok := m.byID[id]
+	return ap, ok
+}
+
 func (m *Manager) ch(id string) chan struct{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -128,6 +153,9 @@ func (m *Manager) status(id string) ApprovalStatus {
 	return m.byID[id].Status
 }
 
+// idSeq 保证同一时刻连续创建（Windows time.Now 精度较粗）时 ID 仍唯一。
+var idSeq atomic.Uint64
+
 func newID() string {
-	return time.Now().Format("20060102150405.000000000")
+	return fmt.Sprintf("%s-%04d", time.Now().Format("20060102150405.000000000"), idSeq.Add(1))
 }

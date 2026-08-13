@@ -2,6 +2,8 @@ package govern
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -72,6 +74,55 @@ func TestAwaitUnknownIDReturnsTimeout(t *testing.T) {
 	st := m.Await(context.Background(), "no-such-id", 10*time.Millisecond)
 	if st != Timeout {
 		t.Fatalf("未知 id 应返回 timeout（fail-closed），got %s", st)
+	}
+}
+
+// F1：控制台需要跨会话枚举全部 pending 审批。
+func TestPendingAllListsAcrossSessions(t *testing.T) {
+	m := NewManager()
+	if _, err := m.Create("s1", Action{}, "r", "risk"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Create("s2", Action{}, "r", "risk"); err != nil {
+		t.Fatal(err)
+	}
+	aps := m.PendingAll()
+	if len(aps) != 2 {
+		t.Fatalf("PendingAll 应返回 2 条，got %d", len(aps))
+	}
+}
+
+// F1：decided 事件需要按 id 读取最终状态（含已决审批）。
+func TestGetHitAndMiss(t *testing.T) {
+	m := NewManager()
+	ap, err := m.Create("s1", Action{}, "r", "risk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := m.Get(ap.ID)
+	if !ok || got.ID != ap.ID {
+		t.Fatalf("Get 命中失败: ok=%v got=%+v", ok, got)
+	}
+	if _, ok := m.Get("no-such-id"); ok {
+		t.Fatal("Get 未命中应返回 false")
+	}
+}
+
+// F1：Approval JSON 输出 camelCase，/api/approvals/pending 与 SSE 扁平字段风格一致。
+func TestApprovalJSONCamelCase(t *testing.T) {
+	ap := &Approval{ID: "a1", SessionID: "s1", Rule: "r", Risk: "risk", Status: Pending, DecidedBy: "u"}
+	b, err := json.Marshal(ap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := string(b)
+	for _, key := range []string{`"id"`, `"sessionId"`, `"decidedBy"`} {
+		if !strings.Contains(raw, key) {
+			t.Fatalf("缺 camelCase 键 %s: %s", key, raw)
+		}
+	}
+	if strings.Contains(raw, `"SessionID"`) || strings.Contains(raw, `"DecidedBy"`) {
+		t.Fatalf("出现 PascalCase 键: %s", raw)
 	}
 }
 
