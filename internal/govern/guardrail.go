@@ -9,9 +9,9 @@ import (
 type Decision string
 
 const (
-	Allow    Decision = "allow"
-	Deny     Decision = "deny"
-	Approval Decision = "approval"
+	Allow         Decision = "allow"
+	Deny          Decision = "deny"
+	NeedsApproval Decision = "approval"
 )
 
 type Action struct {
@@ -67,7 +67,7 @@ func Check(p Policy, gc GuardContext, a Action) Verdict {
 		// ③ 依次匹配 approval_patterns → approval
 		for _, pat := range p.ApprovalPatterns {
 			if match(pat, cmd) {
-				return Verdict{Decision: Approval, Rule: pat}
+				return Verdict{Decision: NeedsApproval, Rule: pat}
 			}
 		}
 	}
