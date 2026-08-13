@@ -276,7 +276,7 @@ func (a *app) cmdRun(args []string) int {
 			fmt.Fprintf(a.stderr, "run: 策略解析失败：%v\n", uerr)
 			return ExitConfig
 		}
-		policy = p
+		policy = withTimeoutFallback(p)
 	}
 	// newLLMClient 默认接入真实适配器（llm.NewOpenAIClient）；仅在测试替换为 nil 时停于此。
 	client := newLLMClient(cfg.BaseURL, modelName, key)
@@ -318,6 +318,15 @@ func (a *app) cmdRun(args []string) int {
 	default:
 		return ExitBudget
 	}
+}
+
+// withTimeoutFallback 对自定义策略做缺省兜底（T14 Important）：
+// ApprovalTimeoutSeconds<=0 时回退为默认策略的值，避免审批超时配置缺失导致行为异常。
+func withTimeoutFallback(p govern.Policy) govern.Policy {
+	if p.ApprovalTimeoutSeconds <= 0 {
+		p.ApprovalTimeoutSeconds = govern.DefaultPolicy().ApprovalTimeoutSeconds
+	}
+	return p
 }
 
 // assembleTools 组装会话工具集：文件四件套 + run_shell + run_test（真实执行器）。

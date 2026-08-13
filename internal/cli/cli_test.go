@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/166176/harness/internal/govern"
 	"github.com/166176/harness/internal/llm"
 	"github.com/166176/harness/internal/secret"
 )
@@ -147,6 +148,26 @@ func TestNewLLMClientFactoryWiredToOpenAI(t *testing.T) {
 	}
 	if !comp.Done {
 		t.Fatalf("无 tool_calls 应 Done：%+v", comp)
+	}
+}
+
+// T14 Important：自定义 policy 未写 approval_timeout_seconds（或 <=0）时应回退默认值。
+func TestWithTimeoutFallbackUsesDefaultWhenUnset(t *testing.T) {
+	p := withTimeoutFallback(govern.Policy{ApprovalPatterns: []string{`(?i)rm -rf`}})
+	want := govern.DefaultPolicy().ApprovalTimeoutSeconds
+	if p.ApprovalTimeoutSeconds != want {
+		t.Fatalf("未设置超时应回退默认 %d，got %d", want, p.ApprovalTimeoutSeconds)
+	}
+	if p.ApprovalTimeoutSeconds <= 0 {
+		t.Fatal("回退后超时必须为正")
+	}
+}
+
+// 显式正整数应原样保留。
+func TestWithTimeoutFallbackKeepsPositiveValue(t *testing.T) {
+	p := withTimeoutFallback(govern.Policy{ApprovalTimeoutSeconds: 60})
+	if p.ApprovalTimeoutSeconds != 60 {
+		t.Fatalf("显式 60 应保留，got %d", p.ApprovalTimeoutSeconds)
 	}
 }
 
