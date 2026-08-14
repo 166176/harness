@@ -71,3 +71,11 @@
 - **实例实况（2026-08-14 晚）**：实例 `i-bp1f9q3m4wrr7pi3jv51`，公网 IP `47.97.60.137` 确认无误，安全组 `sg-bp1f9q3m4wrr7phzssah`（cn-hangzhou）已放行 22/80 → `0.0.0.0/0`；但**操作系统为 Windows Server 2022**（非 Linux）。已确认本机出口 IP=`223.68.97.95` 且安全组含「所有流量 from 该 IP」规则，TCP 22/80 仍被拒 → 系 Windows 无 sshd 所致，非安全组问题。已构建 `gavel.exe`(windows/amd64) 与 `deploy/windows-setup.ps1`（计划任务 + `.env`），并补 `deploy/binary-setup.sh`(linux systemd)。README 云部署小节已改为「二进制优先 + 双系统脚本」。
 - **本机 Docker 环境故障**：Docker Desktop 数据盘 vhdx 损坏（pull 全部 `short read EOF`），经 `wsl --unregister` + 删除 `%LOCALAPPDATA%\Docker\wsl` 重建后恢复；镜像拉取在后台验证中。ECS 部署已切二进制方案，Docker 仅保留为 CI/ghcr 容器分发产物。
 - **部署成功（2026-08-14 晚，交付清单第 9 项达成）**：新实例 `i-bp1i8936zyi8gq862z74`（Alibaba Cloud Linux 3，公网 `47.97.30.54`）。SSH 密码认证被拒（实例为密钥对创建）→ 改用**阿里云 Workbench CLI**（`workbench` v1.0.0，经 OSS 内网中转，无需公网 SSH）：`workbench upload` 上传 `gavel-linux` + `deploy/binary-setup.sh`，`workbench exec`（`--output json` 规避 Windows 管道竞态 bug）执行 `binary-setup.sh`。服务 `gavel.service` Active(running)，`/opt/gavel/.env`(0600) 注入 `GAVEL_API_KEY`+`PORT=80`。公网验证：`http://47.97.30.54/` HTTP 200（WebUI）、`/api/key/status` 200（provider=chain, mask `sk-...7518`）、`/api/demo` 三场景全部 `pass:true`。
+
+### [S9] 真实 LLM 验收（2026-08-14，技能：systematic-debugging + TDD）
+- **验收命令**：`gavel run --repo testdata/sample-repo --test "go test ./..." --task "修复失败测试"`（真实 DeepSeek API，`GAVEL_API_KEY` 环境变量注入）。
+- **发现并修复 2 个真实缺陷**（mock 单测均未暴露，恰证 §A.4-C「移除 LLM 后剩多少可验证工程」的验收价值）：
+  1. `run_test` 工具 schema `required:null` → DeepSeek 400 `null is not of type "array"`。修复 `fileParams` nil→`[]string{}`；TDD 回归测试 `TestToolSpecsJSONMarshalNoNullRequired`（先红后绿）。
+  2. `chatCall` 缺 `type:"function"` → DeepSeek 400 `messages[n]: missing field type`（实证：带 type 通过、去掉复现同样报错）。修复加 `Type` 字段；TDD 回归测试 `TestOpenAIClientToolCallsIncludeType`。
+- **验收通过**：会话 `dkomk54kpk9s`，8 步完成（read_file → write_file → run_test → 反馈闭环），`calc.go` 被真实修复为 `a+b`，`go test ./...` 全绿。夹具已还原种子 bug 保持可复现。commit `2fba773`（4 文件，双远端已推）。
+- **线上同步**：重建 `gavel-linux` 经 Workbench 重传，`systemctl restart gavel`（先 stop 再替换避开 Text file busy），公网 `/api/key/status` 200。
