@@ -7,6 +7,9 @@ bin/
 dist/
 /gavel
 /gavel.exe
+/gavel-linux
+harness.tar
+harness.tar.gz
 
 # 前端
 webui/node_modules/

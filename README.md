@@ -65,12 +65,12 @@ gavel version
 
 ## 分发
 
-**Docker 镜像**（三阶段：node 构建前端 → golang 编译 → distroless 运行时）：
+**Docker 镜像**（三阶段：node 构建前端 → golang 编译 → alpine 运行时）：
 
 ```bash
 docker build -t ghcr.io/166176/harness .
 docker run -p 8080:8080 -e GAVEL_API_KEY=sk-xxx ghcr.io/166176/harness
-# 容器入口为 gavel serve，监听 8080；支持 $PORT 覆盖（Render 等平台）
+# 容器入口为 gavel serve，监听 8080；支持 $PORT 覆盖
 ```
 
 **跨平台二进制**（goreleaser，windows/linux/darwin × amd64，免 tar 单文件）：
@@ -80,6 +80,26 @@ goreleaser release --clean
 ```
 
 **CI**：`.github/workflows/ci.yml`（job `unit-test` = `go test ./...` + webui vitest；job `docker` = 构建并推送 `ghcr.io/166176/harness`；job `release` = 打 tag `v*` 时 goreleaser 发版）；`.gitlab-ci.yml`（job `unit-test` = golang:1.24 镜像跑 `go test ./...`）。
+
+## 云部署（阿里云 ECS）
+
+部署形态：**Docker 容器**，公网入口 `http://<ECS公网IP>/` → 安全组 80 → 容器 `80:8080` → `gavel serve`（WebUI / REST / SSE）。
+
+**CI/CD 策略**：GitHub Actions 自动构建镜像并推送 `ghcr.io/166176/harness`（发布流）；ECS 采用「本地构建 → `docker save` → `scp` → `docker load`」离线传输（大陆 ECS 直拉 ghcr.io 慢且包需设为公开，本地传输最稳）。
+
+```bash
+# 本机：构建 + 打包 + 上传（ECS 侧自动安装 Docker、载入镜像、启动容器）
+docker build -t harness:latest .
+docker save harness:latest | gzip > harness.tar.gz
+powershell -File deploy/upload.ps1 -Ip <ECS公网IP>
+# 首次运行会在 /opt/gavel/.env（0600）写入 GAVEL_API_KEY，然后:
+#   docker run -d --name harness -p 80:8080 --env-file /opt/gavel/.env --restart unless-stopped harness:latest
+```
+
+- 服务器脚本：`deploy/ecs-setup.sh`（装 Docker → `docker load` → 校验 `.env` → 启动容器，开机自启 `--restart unless-stopped`）
+- 密钥：`/opt/gavel/.env` 以 0600 落盘，经 `--env-file` 注入容器（进程环境可见，明文风险见 SPEC §4.2）
+- 备案：按 IP 访问无需 ICP 备案；若绑定域名则需备案
+- 线上地址：`http://47.97.60.137/`（交付清单第 9 项）
 
 ## 目录结构
 

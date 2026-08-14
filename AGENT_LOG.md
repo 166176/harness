@@ -61,3 +61,10 @@
 - **2026-08-14**：推送 NJU GitLab（`git@git.nju.edu.cn:166176/se-ai.git`，分支 `main`，commit `8cbb815`）后自动触发流水线。
 - **流水线 #320986（最后一次执行）**：job `unit-test`（镜像 golang:1.24，`go test ./...`，GOPROXY=goproxy.cn）——**PASS（用户已确认）**。
 - 说明：为防 runner 拉取依赖时 `proxy.golang.org` 不可达，`.gitlab-ci.yml` 已配置 `GOPROXY: https://goproxy.cn,direct`（本地冷启动验证时实证该域名不可达）。
+
+### [S8] 云部署（2026-08-14，技能：verification-before-completion）
+- **EnvProvider**：容器/云端无 keyring 与 `.env` 文件，新增 `internal/secret/env.go`（读 `GAVEL_API_KEY` 环境变量，只读），密钥链改为 keyring → `.env` → env（commit `91decad`，单测覆盖含 Chain 回退）。
+- **GitHub CI 修复**：`.github/workflows/ci.yml` 触发分支原为 `master` 而分支是 `main` → CI 从未运行、GHCR 镜像从未构建；改为 `[main, master]`（commit `44f74e3`），推送后 CI 全绿：`unit-test` + `docker`（构建并推送 `ghcr.io/166176/harness:latest`）。
+- **Dockerfile 大陆网络适配**：build 阶段加 `GOPROXY=https://goproxy.cn,direct`（默认 proxy.golang.org 不可达，冷启动已证）；运行基镜像由 `gcr.io/distroless` 改为 `alpine:3.20` + ca-certificates（gcr.io 大陆常被墙，Docker Hub 可镜像加速）。
+- **部署路径决策**：GHCR 匿名查询返回 401 → 包默认私有；且大陆 ECS 直拉 ghcr.io 慢。选定「本地构建 → `docker save | gzip` → `scp` → `docker load`」离线传输，配套 `deploy/upload.ps1`（本机侧）+ `deploy/ecs-setup.sh`（ECS 侧：装 Docker → load → 校验 `/opt/gavel/.env`(0600) → `docker run -p 80:8080 --env-file --restart unless-stopped`）。
+- **ECS**：`47.97.60.137`（阿里云，待用户输入 SSH 密码完成上传与启动）。
