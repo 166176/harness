@@ -79,6 +79,18 @@ docker run -p 8080:8080 -e GAVEL_API_KEY=sk-xxx ghcr.io/166176/harness
 goreleaser release --clean
 ```
 
+**托管 Release 链接（方案一）**：打 `v*` tag 自动触发 goreleaser 发布，二进制可直接下载：
+<https://github.com/166176/harness/releases/tag/v0.1.0>（含 `gavel_*_windows_amd64.exe` / `_linux_amd64` / `_darwin_amd64` 与 `checksums.txt`）
+
+**双形态架构（方案二，参照 llama.cpp 的 llama-cli + llama-server）**：
+
+| 形态 | 命令 | 用途 |
+| --- | --- | --- |
+| CLI | `gavel run --repo <路径> --test <测试命令> --task <任务>` | 无头自主修复（批处理/CI） |
+| WebUI | `gavel serve`（REST + SSE + 审批控制台） | 人工审批、会话监控、机制演示 |
+
+线上 WebUI（交付清单第 9 项）：<http://47.97.30.54/>；本地启动：`gavel serve` 后打开 <http://localhost:8080>。
+
 **CI**：`.github/workflows/ci.yml`（job `unit-test` = `go test ./...` + webui vitest；job `docker` = 构建并推送 `ghcr.io/166176/harness`；job `release` = 打 tag `v*` 时 goreleaser 发版）；`.gitlab-ci.yml`（job `unit-test` = golang:1.24 镜像跑 `go test ./...`）。
 
 ## 云部署（阿里云 ECS）
