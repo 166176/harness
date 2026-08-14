@@ -112,7 +112,7 @@ scp gavel.exe deploy/windows-setup.ps1 Administrator@<ECS公网IP>:C:/gavel/
 - 部署脚本：`deploy/binary-setup.sh`（Linux systemd）、`deploy/windows-setup.ps1`（Windows 计划任务）、`deploy/upload.ps1` / `deploy/ecs-setup.sh`（Docker 方案备用）
 - 密钥：目标机 `.env`（Linux `/opt/gavel/.env` 0600；Windows `C:\gavel\.env`）经环境注入，进程环境可见（明文风险见 SPEC §4.2）
 - 备案：按 IP 访问无需 ICP 备案；若绑定域名则需备案
-- 线上地址：`http://47.97.60.137/`（交付清单第 9 项；部署完成后确认）
+- 线上地址：**`http://47.97.30.54/`**（交付清单第 9 项；阿里云 ECS `i-bp1i8936zyi8gq862z74`，Alibaba Cloud Linux 3，systemd 服务 `gavel.service`，2026-08-14 部署验证通过）
 
 ## 目录结构
 
