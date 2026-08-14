@@ -57,6 +57,7 @@ type chatFunction struct {
 
 type chatCall struct {
 	ID       string `json:"id"`
+	Type     string `json:"type"` // OpenAI 兼容 tool_call 必须带 type:function（DeepSeek 验收实证）
 	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -81,7 +82,7 @@ func (c *OpenAIClient) Complete(ctx context.Context, msgs []Message, tools []Too
 	for _, m := range msgs {
 		cm := chatMessage{Role: string(m.Role), Content: m.Content, ToolCallID: m.ToolCallID}
 		for _, tc := range m.ToolCalls {
-			call := chatCall{ID: tc.ID}
+			call := chatCall{ID: tc.ID, Type: "function"}
 			call.Function.Name = tc.Name
 			call.Function.Arguments = tc.Arguments
 			cm.ToolCalls = append(cm.ToolCalls, call)

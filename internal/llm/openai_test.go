@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -82,6 +83,44 @@ func TestOpenAIClientErrorDoesNotLeakKey(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "sk-super-secret-key") {
 		t.Fatalf("错误信息泄露 API key：%v", err)
+	}
+}
+
+// TestOpenAIClientToolCallsIncludeType 回归测试：真实 DeepSeek 验收发现
+// 请求体 tool_calls 缺 `type:"function"` 会报 "messages[n]: missing field type"
+// （400 invalid_request_error）。OpenAI 兼容 schema 要求每个 tool_call 带 type。
+func TestOpenAIClientToolCallsIncludeType(t *testing.T) {
+	var got []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = io.ReadAll(r.Body)
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "ok"}}},
+		})
+	}))
+	defer srv.Close()
+	c := NewOpenAIClient(srv.URL, "sk-test", "deepseek-chat")
+	msgs := []Message{{
+		Role:      RoleAssistant,
+		Content:   "",
+		ToolCalls: []ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"a.go"}`}},
+	}}
+	if _, err := c.Complete(context.Background(), msgs, nil); err != nil {
+		t.Fatal(err)
+	}
+	var raw struct {
+		Messages []struct {
+			ToolCalls []map[string]any `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(got, &raw); err != nil {
+		t.Fatalf("解析请求体失败: %v", err)
+	}
+	if len(raw.Messages) != 1 || len(raw.Messages[0].ToolCalls) != 1 {
+		t.Fatalf("请求结构不符: %s", got)
+	}
+	tc := raw.Messages[0].ToolCalls[0]
+	if tc["type"] != "function" {
+		t.Fatalf("tool_calls[0] 缺 type=function，got %s", got)
 	}
 }
 

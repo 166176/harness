@@ -38,10 +38,15 @@ func (t *fileTool) Execute(ctx context.Context, args map[string]any) (string, er
 }
 
 // fileParams 构造工具参数 schema；属性均为 string，required 声明必填字段。
+// 真实 LLM（DeepSeek）拒绝 `required: null`（"null is not of type array"），
+// 无必填字段时必须输出空数组 [] 而非 null。
 func fileParams(propNames, required []string) map[string]any {
 	props := map[string]any{}
 	for _, n := range propNames {
 		props[n] = map[string]any{"type": "string"}
+	}
+	if required == nil {
+		required = []string{}
 	}
 	return map[string]any{"type": "object", "properties": props, "required": required}
 }

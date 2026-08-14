@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +90,33 @@ func TestShellToolSpecDeclaresCommand(t *testing.T) {
 		}
 		if !eqStrings(req, tc.required) {
 			t.Fatalf("%s: required 应为 %v，got %v", tc.name, tc.required, params["required"])
+		}
+	}
+}
+
+// TestToolSpecsJSONMarshalNoNullRequired 回归测试：真实 LLM 验收发现 DeepSeek 拒绝
+// `required: null`（"null is not of type array"）。schema JSON 序列化后 required
+// 必须是数组（可空数组），不得为 null。mock 驱动的单测此前未暴露此缺陷。
+func TestToolSpecsJSONMarshalNoNullRequired(t *testing.T) {
+	tools := []Tool{
+		ShellTool(&fakeRunner{}, "/repo"),
+		TestTool(&fakeRunner{}, "/repo", "go test ./..."),
+	}
+	for _, tl := range tools {
+		spec := tl.Spec()
+		b, err := json.Marshal(spec)
+		if err != nil {
+			t.Fatalf("%s: Marshal 失败: %v", spec.Name, err)
+		}
+		if strings.Contains(string(b), `"required":null`) {
+			t.Fatalf("%s: schema required 为 null（真实 LLM 拒绝），got %s", spec.Name, b)
+		}
+		req, ok := spec.Parameters["required"]
+		if !ok {
+			t.Fatalf("%s: Parameters 缺 required", spec.Name)
+		}
+		if _, ok := req.([]string); !ok {
+			t.Fatalf("%s: required 应为 []string，got %T (%v)", spec.Name, req, req)
 		}
 	}
 }
