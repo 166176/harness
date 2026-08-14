@@ -83,23 +83,36 @@ goreleaser release --clean
 
 ## 云部署（阿里云 ECS）
 
-部署形态：**Docker 容器**，公网入口 `http://<ECS公网IP>/` → 安全组 80 → 容器 `80:8080` → `gavel serve`（WebUI / REST / SSE）。
+部署形态：**单文件二进制**（Linux systemd / Windows 计划任务），公网入口 `http://<ECS公网IP>/` → 安全组 80 → `gavel serve`（WebUI / REST / SSE，监听 `$PORT`）。镜像（`ghcr.io/166176/harness`，CI 自动构建）作为容器分发产物保留。
 
-**CI/CD 策略**：GitHub Actions 自动构建镜像并推送 `ghcr.io/166176/harness`（发布流）；ECS 采用「本地构建 → `docker save` → `scp` → `docker load`」离线传输（大陆 ECS 直拉 ghcr.io 慢且包需设为公开，本地传输最稳）。
+**CI/CD 策略**：GitHub Actions 自动构建镜像并推送 `ghcr.io/166176/harness`（发布流）；ECS 采用「本机交叉编译 → `scp` → 目标机运行」离线传输（大陆 ECS 直拉 ghcr.io 慢，二进制最稳、无需装 Docker）。
+
+**Linux 系统**（推荐）：
 
 ```bash
-# 本机：构建 + 打包 + 上传（ECS 侧自动安装 Docker、载入镜像、启动容器）
-docker build -t harness:latest .
-docker save harness:latest | gzip > harness.tar.gz
-powershell -File deploy/upload.ps1 -Ip <ECS公网IP>
-# 首次运行会在 /opt/gavel/.env（0600）写入 GAVEL_API_KEY，然后:
-#   docker run -d --name harness -p 80:8080 --env-file /opt/gavel/.env --restart unless-stopped harness:latest
+# 本机：构建 linux/amd64 二进制并上传（SSH 密码在终端输入）
+$env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -o gavel-linux ./cmd/gavel
+scp gavel-linux deploy/binary-setup.sh root@<ECS公网IP>:/tmp/
+ssh root@<ECS公网IP> "bash /tmp/binary-setup.sh"
+# 服务器侧：校验二进制 → 校验 /opt/gavel/.env(0600, 含 GAVEL_API_KEY) → 写入 systemd 服务(PORT=80, 开机自启)
 ```
 
-- 服务器脚本：`deploy/ecs-setup.sh`（装 Docker → `docker load` → 校验 `.env` → 启动容器，开机自启 `--restart unless-stopped`）
-- 密钥：`/opt/gavel/.env` 以 0600 落盘，经 `--env-file` 注入容器（进程环境可见，明文风险见 SPEC §4.2）
+**Windows Server 系统**：
+
+```powershell
+# 本机：构建 windows/amd64 二进制并上传
+$env:GOOS="windows"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -o gavel.exe ./cmd/gavel
+scp gavel.exe deploy/windows-setup.ps1 Administrator@<ECS公网IP>:C:/gavel/
+# 服务器侧（管理员）：创建 C:\gavel\.env（GAVEL_API_KEY + PORT=80）后运行 windows-setup.ps1
+# 脚本注册开机自启计划任务 "gavel"，本机自检 /api/key/status
+```
+
+- 部署脚本：`deploy/binary-setup.sh`（Linux systemd）、`deploy/windows-setup.ps1`（Windows 计划任务）、`deploy/upload.ps1` / `deploy/ecs-setup.sh`（Docker 方案备用）
+- 密钥：目标机 `.env`（Linux `/opt/gavel/.env` 0600；Windows `C:\gavel\.env`）经环境注入，进程环境可见（明文风险见 SPEC §4.2）
 - 备案：按 IP 访问无需 ICP 备案；若绑定域名则需备案
-- 线上地址：`http://47.97.60.137/`（交付清单第 9 项）
+- 线上地址：`http://47.97.60.137/`（交付清单第 9 项；部署完成后确认）
 
 ## 目录结构
 

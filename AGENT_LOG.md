@@ -68,3 +68,5 @@
 - **Dockerfile 大陆网络适配**：build 阶段加 `GOPROXY=https://goproxy.cn,direct`（默认 proxy.golang.org 不可达，冷启动已证）；运行基镜像由 `gcr.io/distroless` 改为 `alpine:3.20` + ca-certificates（gcr.io 大陆常被墙，Docker Hub 可镜像加速）。
 - **部署路径决策**：GHCR 匿名查询返回 401 → 包默认私有；且大陆 ECS 直拉 ghcr.io 慢。选定「本地构建 → `docker save | gzip` → `scp` → `docker load`」离线传输，配套 `deploy/upload.ps1`（本机侧）+ `deploy/ecs-setup.sh`（ECS 侧：装 Docker → load → 校验 `/opt/gavel/.env`(0600) → `docker run -p 80:8080 --env-file --restart unless-stopped`）。
 - **ECS**：`47.97.60.137`（阿里云，待用户输入 SSH 密码完成上传与启动）。
+- **实例实况（2026-08-14 晚）**：实例 `i-bp1f9q3m4wrr7pi3jv51`，公网 IP `47.97.60.137` 确认无误，安全组 `sg-bp1f9q3m4wrr7phzssah`（cn-hangzhou）已放行 22/80 → `0.0.0.0/0`；但**操作系统为 Windows Server 2022**（非 Linux）。已确认本机出口 IP=`223.68.97.95` 且安全组含「所有流量 from 该 IP」规则，TCP 22/80 仍被拒 → 系 Windows 无 sshd 所致，非安全组问题。已构建 `gavel.exe`(windows/amd64) 与 `deploy/windows-setup.ps1`（计划任务 + `.env`），并补 `deploy/binary-setup.sh`(linux systemd)。README 云部署小节已改为「二进制优先 + 双系统脚本」。
+- **本机 Docker 环境故障**：Docker Desktop 数据盘 vhdx 损坏（pull 全部 `short read EOF`），经 `wsl --unregister` + 删除 `%LOCALAPPDATA%\Docker\wsl` 重建后恢复；镜像拉取在后台验证中。ECS 部署已切二进制方案，Docker 仅保留为 CI/ghcr 容器分发产物。
